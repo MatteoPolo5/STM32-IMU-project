@@ -1,0 +1,30 @@
+name: Release
+
+# Push a tag such as v0.1.0 to publish flashable binaries on the GitHub Releases page.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+      - run: cmake --preset firmware && cmake --build --preset firmware
+      - name: Collect artefacts
+        run: |
+          mkdir dist
+          cp build/firmware/firmware/imu_daq.{bin,hex,elf,map} dist/
+          arm-none-eabi-size build/firmware/firmware/imu_daq.elf | tee dist/size.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

@@ -1,0 +1,36 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "firmware",
+      "displayName": "Firmware (arm-none-eabi, Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/firmware",
+      "toolchainFile": "${sourceDir}/cmake/arm-none-eabi.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "firmware-debug",
+      "inherits": "firmware",
+      "displayName": "Firmware (arm-none-eabi, Debug)",
+      "binaryDir": "${sourceDir}/build/firmware-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "host-tests",
+      "displayName": "Host unit tests (native compiler)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/host",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "firmware", "configurePreset": "firmware" },
+    { "name": "firmware-debug", "configurePreset": "firmware-debug" },
+    { "name": "host-tests", "configurePreset": "host-tests" }
+  ],
+  "testPresets": [
+    { "name": "host-tests", "configurePreset": "host-tests", "output": { "outputOnFailure": true } }
+  ]
+}

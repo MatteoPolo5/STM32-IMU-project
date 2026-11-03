@@ -1,0 +1,19 @@
+# build output
+build/
+*.elf
+*.map
+*.hex
+# captured data and generated results (keep the folder, not the files)
+data/*
+!data/.gitkeep
+results/*
+!results/.gitkeep
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
