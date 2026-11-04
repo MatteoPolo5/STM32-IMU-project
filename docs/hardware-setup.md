@@ -26,7 +26,7 @@ The serial stream uses USART2 (PA2) which is wired to the ST-LINK virtual COM po
 ## Build and flash
 
 ```bash
-sudo apt install cmake ninja-build gcc-arm-none-eabi openocd     # Ubuntu / WSL
+sudo apt install cmake ninja-build gcc-arm-none-eabi openocd     # Ubuntu
 cmake --preset firmware
 cmake --build --preset firmware                  # -> build/firmware/firmware/imu_daq.{elf,bin,hex}
 

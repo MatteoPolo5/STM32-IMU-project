@@ -8,7 +8,7 @@ Every test has a pass criterion and the command that produces the number.
 | ID | What | How | Pass criterion | Status |
 |---|---|---|---|---|
 | T1 | Sensor bring-up | banner shows `who_am_i=0x68` | present | **Pass** (2026-10-28) |
-| T2 | No lost samples, end to end | 10 min capture at 1 kHz, `analyze` | `frames_lost == 0`, `crc_errors == 0` | **Pass on native Linux**: 600 s, 608 511 frames, 0 lost, 0 CRC errors with the fixed `capture` (linux_10min_b, see run log 2026-11-02). Not met on the WSL2 path; 79 lost (0.13 %) in 60 s through WSL2/usbip |
+| T2 | No lost samples, end to end | 10 min capture at 1 kHz, `analyze` | `frames_lost == 0`, `crc_errors == 0` | **Pass on native Linux**: 600 s, 608 511 frames, 0 lost, 0 CRC errors with the fixed `capture` (linux_10min_b, see run log 2026-11-02). Not met on the first (virtual-machine USB) path: 79 lost (0.13 %) in 60 s |
 | T2b | No lost samples, firmware side | internal counters via `tools/read_stats.py` | overruns = ring overflows = I2C errors = watchdog aborts = 0, `frames_sent == ticks` | **Pass**: 958 398 samples, all counters 0 |
 | T3 | Absolute sampling rate | compare sample count with an independent time reference | within 100 ppm (HSE) | **Partly verified**: HSI build ran about +1.3 % fast (1013-1015 frames/s); HSE build gives 60 032 frames in 60 s (+0.05 %, inside the host timing uncertainty of about 0.2 %). Not yet shown within 100 ppm, see run log 2026-11-03 |
 | T4 | ISR-entry jitter (from log) | `jitter_us` in `summary.json` | report rms, peak-to-peak, max | **Recorded** (table below) |
@@ -18,7 +18,7 @@ Every test has a pass criterion and the command that produces the number.
 | T8 | Fault injection: stalled main loop | debug build with `hw::delay_ms(200)` added to `daq::poll()` | `ring_overflows` increases, gaps visible in `seq`, stream recovers | Not done |
 | T9 | Fault injection: I2C | disconnect SDA for 1 s during streaming, reconnect | `i2c_errors` / `watchdog_aborts` increase, streaming resumes by itself | Not done |
 | T10 | Rate sweep | build with 200 / 500 / 1000 Hz | table below | Not done |
-| T11 | Capture path independence | same 60 s capture on a native Linux PC (no WSL2/usbip) | compare gap statistics with the WSL2 runs | **Done**: no loss on native Linux (60 s and 600 s), so the WSL2 losses were not reproduced without WSL2/usbip. This is consistent with a WSL2 path problem, not proof of it (one board, one PC, two sessions) |
+| T11 | Capture path independence | same 60 s capture on a native Linux PC (no virtual machine, no USB forwarding) | compare gap statistics with the first runs | **Done**: no loss on native Linux (60 s and 600 s), so the losses were not reproduced without the virtual-machine path. Consistent with that path being the cause, not proof of it (one board, one PC, two sessions) |
 
 ### Criterion revision (T7)
 
@@ -70,7 +70,7 @@ EOF
 
 **Setup.** NUCLEO-F446RE (ST-LINK V2J33M25), GY-521 (MPU6050, AD0 = GND, address 0x68). Firmware 0.1.0 plus the I2C
 diagnostics patch, arm-none-eabi-gcc 13.2.1, Release. 1 kHz, I2C 400 kHz, 460800 baud, HSI clock. Host: Windows laptop,
-Ubuntu 24.04 under WSL2, board forwarded with usbipd-win, capture with pyserial. IMU resting on the table (not guaranteed
+Ubuntu 24.04 in a virtual machine, ST-LINK USB forwarded into it, capture with pyserial. IMU resting on the table (not guaranteed
 flat: the first 19-sample snapshot had `ay` = 0.37 g).
 
 **Results.**
@@ -102,15 +102,16 @@ within 59.00-59.48 s. The firmware's own `dropped` counter was 0 in every frame.
 * Established: in 958 398 samples the firmware acquired every sample and handed every frame to the UART DMA, with no
   I2C error, overrun or ring overflow.
 * Established: the 79 missing frames were lost after the UART DMA hand-off.
-* *Not* established: where. Candidates: ST-LINK virtual COM port buffer, USB, usbip forwarding into WSL2, the host
+* *Not* established: where. Candidates: ST-LINK virtual COM port buffer, USB, USB forwarding into the virtual machine, the host
   reading loop. The burst-like pattern (clusters of small gaps) is consistent with host-side read stalls, but this is
-  a hypothesis. T11 (native Linux capture) is the test that separates the WSL2 path from the rest.
+  a hypothesis. T11 (native Linux capture) is the test that separates the virtual-machine path from the rest.
 
 **Open issues.**
 1. *Wall clock vs sample count.* The 10 s capture contains 9.727 s of samples; the 60 s capture contains 60.872 s.
-   The sign changes between runs, so this is not a constant clock error of the MCU. It points at the host-side capture
-   timing (or the WSL2 clock). Unresolved; do not quote an absolute rate until T3 is done with an independent reference.
-2. T2 (zero loss end to end) is not met on the WSL2 path.
+   Written at the time as unresolved. Later runs (2026-11-02 and 2026-11-03) explain the 60 s case: with the HSI the
+   MCU runs about 1.3-1.5 % fast, and with the HSE it does not. The 10 s case (a deficit of 2.7 %) is not explained by
+   this; it was captured on the first path and is not analysed further.
+2. T2 (zero loss end to end) is not met on the first (virtual-machine) path; met later on native Linux.
 
 **Bring-up notes (useful if it happens again).**
 * First symptom: `FATAL: MPU6050 not responding`. The firmware diagnostics reported
@@ -122,7 +123,7 @@ within 59.00-59.48 s. The firmware's own `dropped` counter was 0 in every frame.
 ### 2026-11-02: native Linux capture (T11)
 
 **Setup.** Same board, sensor and firmware as above. Host: HP EliteBook 840 G7, Ubuntu 20.04.6, Python 3.8.10,
-numpy 1.17.4, `/dev/ttyACM0` directly (no WSL2, no usbip).
+numpy 1.17.4, `/dev/ttyACM0` directly (no virtual machine, no USB forwarding).
 
 **Results.**
 
@@ -160,7 +161,7 @@ out of order 0. Jitter rms 0.004 µs, p-p 0.048 µs, max |err| 0.024 µs; latenc
 |a| = 1.0623 g (+62.3 mg), gyro bias [-1.00551, -1.51608, 0.38757] deg/s. This meets T2 on native Linux.
 Rate: 608 511 frames in about 600 s = about 1014 frames/s (+1.4 %), consistent with the earlier native runs; T3 still open.
 
-**T7 across all sessions.** |a| error: +69.4, +72.9 (WSL2 runs), +66.5, +66.8, +62.3 mg (native Linux); gyro bias z:
+**T7 across all sessions.** |a| error: +69.4, +72.9 (first two runs, virtual machine), +66.5, +66.8, +62.3 mg (native Linux); gyro bias z:
 0.409, 0.406, 0.346, 0.274, 0.388 deg/s. Within the same day and setup the 5 mg / 0.05 deg/s criterion holds; across
 the whole set it does not (spread 10.6 mg and 0.135 deg/s). The sensor was not re-placed identically each time and
 temperature was not controlled, so the cause is not identified. The criterion is not loosened again.
@@ -173,7 +174,7 @@ until the same capture is repeated with the HSE (done 2026-11-03, see below).
 
 **Interpretation.**
 * Established: on this PC, 10 minutes of streaming at 1 kHz arrive without gaps and without CRC errors.
-* Not established: that WSL2/usbip caused the earlier 79 lost frames (see T11 row).
+* Not established: that the virtual-machine USB path caused the earlier 79 lost frames (see T11 row).
 * Tool issue: `analyze` hides the structure of the loss behind one percentage. It should report the number of gaps,
   their sizes and positions, and flag a discontinuity in the first frames.
 
@@ -218,7 +219,7 @@ Interpretation: what is established, what is not
 |---|---|---|---|---|---|---|---|
 | 200 Hz | | | | | | | |
 | 500 Hz | | | | | | | |
-| 1000 Hz | 60 s (WSL2) | 60 793 | 79 | 6 | 0.004 | 0.048 | 388.7 |
+| 1000 Hz | 60 s (virtual machine) | 60 793 | 79 | 6 | 0.004 | 0.048 | 388.7 |
 | 1000 Hz | 60 s (native Linux) | 60 928 | 0 | 0 | n/r | n/r | n/r |
 | 1000 Hz | 10 min (native Linux, old capture) | 608 127 | 0 after the 11 initial stale frames | 0 | 0.004 | n/r | 388.7 |
 | 1000 Hz | 10 min (native Linux, fixed capture) | 608 511 | 0 | 0 | 0.004 | 0.048 | 388.7 |

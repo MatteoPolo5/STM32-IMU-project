@@ -1,6 +1,6 @@
 # NUCLEO-F446RE + MPU6050 — real-time IMU data acquisition
 
-[![CI](https://github.com/<your-user>/nucleo-f446re-imu-daq/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-user>/nucleo-f446re-imu-daq/actions/workflows/ci.yml)
+[![CI](https://github.com/MatteoPolo5/STM32-IMU-project/actions/workflows/ci.yml/badge.svg)](https://github.com/MatteoPolo5/STM32-IMU-project/actions/workflows/ci.yml)
 ![MCU](https://img.shields.io/badge/MCU-STM32F446RE%20(Cortex--M4F)-blue)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -60,8 +60,8 @@ The serial stream goes through the on-board ST-LINK virtual COM port (USART2, PA
 ## Quick start
 
 ```bash
-# 1. Build and flash (Ubuntu / WSL; needs network access once for the CMSIS headers)
-sudo apt install cmake ninja-build gcc-arm-none-eabi openocd
+# 1. Build and flash (Ubuntu; needs CMake >= 3.21 and network access once for the CMSIS headers)
+sudo apt install ninja-build gcc-arm-none-eabi openocd      # CMake: apt on 22.04+, `pip install --user cmake` on 20.04
 cmake --preset firmware
 cmake --build --preset firmware
 cmake --build --preset firmware --target flash          # or drag build/firmware/firmware/imu_daq.bin onto the NODE_F446RE drive
@@ -70,6 +70,7 @@ cmake --build --preset firmware --target flash          # or drag build/firmware
 pip install -r tools/requirements.txt
 cd tools
 python -m imu_daq capture --port /dev/ttyACM0 --duration 600 --out ../data/run.bin     # COM5 on Windows
+                                                                                          # (first second is discarded: --warmup)
 python -m imu_daq analyze ../data/run.bin --rate 1000 --out ../results/run
 ```
 
@@ -77,6 +78,14 @@ python -m imu_daq analyze ../data/run.bin --rate 1000 --out ../results/run
 % 2b. Same analysis in MATLAB
 addpath('tools/matlab');
 report = analyze_log('data/run.bin', 1000);    % rate [Hz], cpu clock, accel/gyro full-scale are optional
+```
+
+Older toolchains (Ubuntu 20.04: CMake 3.16 without presets, OpenOCD 0.10, binutils 2.34) work with:
+
+```bash
+cmake -S . -B build/firmware -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake \
+      -DCMAKE_BUILD_TYPE=Release -DOPENOCD_INTERFACE=interface/stlink-v2-1.cfg
+cmake --build build/firmware
 ```
 
 No board at hand? `python -m imu_daq simulate --out ../data/synthetic.bin` writes a **synthetic** log in the same
@@ -96,12 +105,35 @@ Pass to `cmake --preset firmware`, e.g. `-DSAMPLE_RATE_HZ=200`.
 
 ## Results
 
-Measured on hardware: **to be added** — see the test plan and the table to fill in
-[docs/validation.md](docs/validation.md). Replace this paragraph with the real numbers and plots, e.g.
+Measured on a NUCLEO-F446RE with a GY-521 (MPU6050), 1 kHz, I2C 400 kHz, 460800 baud, captured on a native Linux host.
+Every number comes from `python -m imu_daq analyze` or from the firmware's own counters; the test plan, raw run log and
+the open points are in [docs/validation.md](docs/validation.md).
 
-| Rate | Duration | Lost frames | Jitter rms | Jitter p-p | Latency max |
-|---|---|---|---|---|---|
-| 1 kHz | 10 min | _..._ | _... µs_ | _... µs_ | _... µs_ |
+| Metric | Result | Remark |
+|---|---|---|
+| Lost frames, end to end | **0 of 608 511** in 10 min, 0 CRC errors | native Linux, fixed `capture` |
+| Lost samples, firmware side | 0 overruns, 0 ring overflows, 0 I2C errors, 0 watchdog aborts in 958 398 samples | counters read with OpenOCD |
+| Acquisition latency (tick to DMA done) | 388.6 µs mean, 388.7 µs max | 39 % of the 1 ms period; bus-time estimate is 387.5 µs |
+| Timer-interrupt entry jitter | 0.004 µs rms, 0.036-0.048 µs peak-to-peak | CPU almost idle: this is *not* end-to-end sampling jitter |
+| Sampling rate, internal RC oscillator (HSI) | about 1013-1015 frames/s | **+1.3 to +1.5 % fast** |
+| Sampling rate, ST-LINK 8 MHz clock (HSE) | 60 032 frames in 60 s | +0.05 %, inside the host timing uncertainty (about 0.2 %) |
+| Static IMU, uncalibrated | abs(a) = 1.062-1.073 g, gyro bias about [-1.0, -1.5, 0.27-0.41] deg/s | temperature 23.2 C |
+
+What the measurements showed:
+
+- The "measured rate" printed by `analyze` compares the hardware timer with the cycle counter, which share one clock, so it
+  cannot see a wrong clock. The +1.3 % error of the RC oscillator only appeared when the frame count was compared with the
+  host's wall clock. Feeding the PLL from the ST-LINK clock removed it, and that is now the default build.
+- The latency matches the I2C transaction time at 400 kHz, so the DMA/interrupt path adds almost nothing to it.
+- A first set of captures through a virtualised USB path lost 0.13 % of the frames (79 of 60 793) while the firmware
+  counters stayed at zero. The losses did not reappear on a native Linux host (60 s and 10 min), which is consistent with
+  that path being the cause but does not prove it: one board, one PC.
+- The first frames of a capture can be stale data left in the ST-LINK buffers; `capture` now discards the first second.
+- The static accelerometer error (+62 to +73 mg) and the gyro bias drift between sessions by more than the repeatability
+  criterion set in the test plan, so absolute accuracy needs a calibration step (see roadmap).
+
+Not verified yet: sampling rate within 100 ppm, jitter with a logic analyser, behaviour under injected faults
+(stalled main loop, disconnected SDA), the 200/500/1000 Hz sweep, Allan-deviation figures.
 
 ## Repository layout
 
