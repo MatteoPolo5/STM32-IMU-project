@@ -17,7 +17,7 @@ FetchContent_MakeAvailable(cmsis_core cmsis_device_f4)
 set(SAMPLE_RATE_HZ "" CACHE STRING "IMU sampling rate in Hz (default 1000)")
 set(I2C_CLOCK_HZ   "" CACHE STRING "I2C clock in Hz (default 400000)")
 set(UART_BAUD      "" CACHE STRING "UART baud rate (default 460800)")
-option(USE_HSE_BYPASS "Use the 8 MHz ST-LINK MCO as clock source (falls back to HSI)" OFF)
+option(USE_HSE_BYPASS "Use the 8 MHz ST-LINK MCO as clock source (falls back to HSI)" ON)
 
 execute_process(COMMAND git describe --tags --always --dirty
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -75,8 +75,11 @@ add_custom_command(TARGET imu_daq POST_BUILD
   COMMAND ${CMAKE_SIZE} $<TARGET_FILE:imu_daq>)
 
 # `cmake --build --preset firmware --target flash` programs the board through ST-LINK.
+# OpenOCD < 0.11 (e.g. Ubuntu 20.04) has no interface/stlink.cfg: configure with
+#   -DOPENOCD_INTERFACE=interface/stlink-v2-1.cfg
+set(OPENOCD_INTERFACE "interface/stlink.cfg" CACHE STRING "OpenOCD interface config used by the flash target")
 add_custom_target(flash
-  COMMAND openocd -f interface/stlink.cfg -f target/stm32f4x.cfg
+  COMMAND openocd -f ${OPENOCD_INTERFACE} -f target/stm32f4x.cfg
           -c "program $<TARGET_FILE:imu_daq> verify reset exit"
   DEPENDS imu_daq
   COMMENT "Flashing with OpenOCD")

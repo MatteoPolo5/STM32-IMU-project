@@ -91,7 +91,7 @@ Pass to `cmake --preset firmware`, e.g. `-DSAMPLE_RATE_HZ=200`.
 | `SAMPLE_RATE_HZ` | 1000 | must divide 84 MHz (1000, 500, 250, 200, 100, 50 ...) |
 | `I2C_CLOCK_HZ` | 400000 | 1 kHz needs 400 kHz; the build fails otherwise |
 | `UART_BAUD` | 460800 | 32-byte frames: 1 kHz needs ≥ 400 kbaud |
-| `USE_HSE_BYPASS` | OFF | 8 MHz ST-LINK MCO as PLL source, falls back to HSI |
+| `USE_HSE_BYPASS` | ON | 8 MHz ST-LINK MCO as PLL source, falls back to HSI (the banner shows `clk=HSE` or `clk=HSI`); OFF = HSI only |
 | `MPU_ACCEL_FS_SEL` / `MPU_GYRO_FS_SEL` | 0 / 0 | ±2 g / ±250 deg/s (tell `analyze` with `--accel-fs/--gyro-fs`) |
 
 ## Results

@@ -19,7 +19,7 @@
 #define UART_BAUD 460800  // ST-LINK virtual COM port baud rate
 #endif
 #ifndef USE_HSE_BYPASS
-#define USE_HSE_BYPASS 0  // 1 = use the 8 MHz ST-LINK MCO clock as PLL source (falls back to HSI)
+#define USE_HSE_BYPASS 1  // 1 = use the 8 MHz ST-LINK MCO clock as PLL source (falls back to HSI); 0 = HSI only
 #endif
 #ifndef MPU_ACCEL_FS_SEL
 #define MPU_ACCEL_FS_SEL 0  // 0:+-2g 1:+-4g 2:+-8g 3:+-16g
@@ -75,4 +75,4 @@ inline constexpr std::uint32_t kRingSamples = 64;    // SPSC ring between ISR an
 inline constexpr std::uint32_t kTxBurstFrames = 16;  // frames per UART DMA transfer
 inline constexpr std::uint32_t kWatchdogUs = 3000;   // abort an I2C transaction after 3 ms
 
-}  // namespace cfg
+}  // namespace cfgS
