@@ -3,20 +3,34 @@
 The goal of this project is not "it prints IMU data" but "it samples at a known rate, and I can prove it".
 Every test has a pass criterion and the command that produces the number.
 
-## Tests
+## Tests and status
 
-| ID | What | How | Pass criterion |
-|---|---|---|---|
-| T1 | Sensor bring-up | banner shows `who_am_i=0x68` | present |
-| T2 | No lost samples | 10 min capture at 1 kHz, `analyze` | `frames_lost == 0`, `crc_errors == 0` |
-| T3 | Sampling rate | `rate_hz_measured` from the log | within 1 ppm of 1000 Hz (same clock domain) |
-| T4 | ISR-entry jitter (from log) | `jitter_us` in `summary.json` | report rms, peak-to-peak, max (no fixed limit, it is a measurement) |
-| T5 | Jitter, independent check | logic analyzer on a pin toggled in the TIM2 ISR | compare with T4 |
-| T6 | Acquisition latency | `latency_us` | max < 80 % of the period |
-| T7 | Static IMU sanity | board still on the table | `abs(norm(a) - 1 g) < 30 mg`, gyro bias small and stable |
-| T8 | Fault injection: stalled main loop | debug build with `hw::delay_ms(200)` added to `daq::poll()` | `ring_overflows` increases, gaps are visible in `seq`, stream recovers when the stall is removed |
-| T9 | Fault injection: I2C | disconnect SDA for 1 s during streaming, reconnect | `i2c_errors` / `watchdog_aborts` increase, streaming resumes by itself |
-| T10 | Rate sweep | build with 200 / 500 / 1000 Hz | table below |
+| ID | What | How | Pass criterion | Status |
+|---|---|---|---|---|
+| T1 | Sensor bring-up | banner shows `who_am_i=0x68` | present | **Pass** (2026-10-28) |
+| T2 | No lost samples, end to end | 10 min capture at 1 kHz, `analyze` | `frames_lost == 0`, `crc_errors == 0` | **Pass on native Linux**: 600 s, 608 511 frames, 0 lost, 0 CRC errors with the fixed `capture` (linux_10min_b, see run log 2026-11-02). Not met on the WSL2 path; 79 lost (0.13 %) in 60 s through WSL2/usbip |
+| T2b | No lost samples, firmware side | internal counters via `tools/read_stats.py` | overruns = ring overflows = I2C errors = watchdog aborts = 0, `frames_sent == ticks` | **Pass**: 958 398 samples, all counters 0 |
+| T3 | Absolute sampling rate | compare sample count with an independent time reference | within 100 ppm (HSE) | **Partly verified**: HSI build ran about +1.3 % fast (1013-1015 frames/s); HSE build gives 60 032 frames in 60 s (+0.05 %, inside the host timing uncertainty of about 0.2 %). Not yet shown within 100 ppm, see run log 2026-11-03 |
+| T4 | ISR-entry jitter (from log) | `jitter_us` in `summary.json` | report rms, peak-to-peak, max | **Recorded** (table below) |
+| T5 | Jitter, independent check | logic analyzer on a pin toggled in the TIM2 ISR | compare with T4 | Not done |
+| T6 | Acquisition latency | `latency_us` | max < 80 % of the period | **Pass**: 388.7 µs max (39 % of 1 ms) |
+| T7 | Static IMU sanity | board still on the table | see "Criterion revision" below | **Pass** (revised criterion) |
+| T8 | Fault injection: stalled main loop | debug build with `hw::delay_ms(200)` added to `daq::poll()` | `ring_overflows` increases, gaps visible in `seq`, stream recovers | Not done |
+| T9 | Fault injection: I2C | disconnect SDA for 1 s during streaming, reconnect | `i2c_errors` / `watchdog_aborts` increase, streaming resumes by itself | Not done |
+| T10 | Rate sweep | build with 200 / 500 / 1000 Hz | table below | Not done |
+| T11 | Capture path independence | same 60 s capture on a native Linux PC (no WSL2/usbip) | compare gap statistics with the WSL2 runs | **Done**: no loss on native Linux (60 s and 600 s), so the WSL2 losses were not reproduced without WSL2/usbip. This is consistent with a WSL2 path problem, not proof of it (one board, one PC, two sessions) |
+
+### Criterion revision (T7)
+
+The original criterion was `abs(norm(a) - 1 g) < 30 mg`. That number was a guess made before any
+measurement. The first runs gave +69 mg and +73 mg, which is not unusual for an uncalibrated MEMS accelerometer
+(initial offset and sensitivity tolerances are specified in the MPU-6000/6050 datasheet; check the exact values there
+before quoting them). The criterion was therefore replaced, *after* seeing the data, by:
+
+* **repeatability**: norm error differs by less than 5 mg and gyro bias by less than 0.05 deg/s between runs;
+* absolute accuracy is addressed by a calibration step (see roadmap), not by this test.
+
+Result: run 1 vs run 2 differ by 3.5 mg (norm) and by 0.003 / 0.013 / 0.003 deg/s (gyro bias) -> pass.
 
 ## How to reproduce
 
@@ -26,21 +40,188 @@ python -m imu_daq capture --port /dev/ttyACM0 --duration 600 --out ../data/run_1
 python -m imu_daq analyze ../data/run_1khz.bin --rate 1000 --out ../results/run_1khz
 # MATLAB / Octave
 #   r = analyze_log('data/run_1khz.bin', 1000);
+
+# Firmware-side counters (board connected, no other debugger session open):
+cd ..
+python tools/read_stats.py                  # decodes daq::g_stats read through OpenOCD, CPU keeps running
 ```
 
 `analyze` writes `summary.json` and plots (`timing_jitter.png`, `latency.png`, `imu_signals.png`, `allan_gyro.png`).
 
-## Results (to be filled in with measured data)
+Where the losses are (gap positions and sizes, firmware drop counter):
 
-> The numbers below are intentionally empty: fill them in from *your* captures, together with the date,
-> board revision, firmware commit (`git describe`), toolchain version and cable/wiring notes.
-> Copy the plots into `docs/images/` and link them from the README.
+```bash
+cd tools
+python -I - <<'EOF'
+import sys; sys.path.insert(0, '.')
+import numpy as np
+from imu_daq.protocol import parse
+L = parse(open('../data/run_1khz.bin', 'rb').read())
+d = np.diff(L.seq.astype(np.int64)); idx = np.flatnonzero(d > 1)
+print("gaps:", idx.size, "sizes:", sorted(set((d[idx] - 1).tolist())))
+print("at (s):", np.round((L.seq[idx] - L.seq[0]) / 1000, 2).tolist()[:40])
+print("firmware dropped counter (last):", int(L.dropped[-1]))
+EOF
+```
+
+## Run log
+
+### 2026-10-28: first hardware runs
+
+**Setup.** NUCLEO-F446RE (ST-LINK V2J33M25), GY-521 (MPU6050, AD0 = GND, address 0x68). Firmware 0.1.0 plus the I2C
+diagnostics patch, arm-none-eabi-gcc 13.2.1, Release. 1 kHz, I2C 400 kHz, 460800 baud, HSI clock. Host: Windows laptop,
+Ubuntu 24.04 under WSL2, board forwarded with usbipd-win, capture with pyserial. IMU resting on the table (not guaranteed
+flat: the first 19-sample snapshot had `ay` = 0.37 g).
+
+**Results.**
+
+| Run | Wall time | Frames received | Seq range | Lost | CRC errors | Jitter rms | Jitter p-p | Max abs err | Latency mean / max |
+|---|---|---|---|---|---|---|---|---|---|
+| prova1 | 10 s | 9727 | 9727 | 0 | 0 | 0.004 µs | 0.036 µs | 0.024 µs | 388.6 / 388.7 µs |
+| prova2 | 60 s | 60 793 | 60 872 | 79 (0.130 %) | 6 | 0.004 µs | 0.048 µs | 0.024 µs | 388.6 / 388.7 µs |
+
+Jitter is the variation of the *timer-interrupt entry* time (CPU almost idle), not an end-to-end sampling jitter.
+
+Static IMU (uncalibrated):
+
+| Run | abs(a) [g] | Error [mg] | Gyro bias [deg/s] |
+|---|---|---|---|
+| prova1 | 1.0694 | +69.4 | [-0.994, -1.551, 0.409] |
+| prova2 | 1.0729 | +72.9 | [-0.991, -1.564, 0.406] |
+
+**Gap analysis, prova2.** 10 gaps of 1, 3, 4, 6, 11, 17 and 25 frames, at about 7.31 s, 8.00 s, 8.02 s and seven
+within 59.00-59.48 s. The firmware's own `dropped` counter was 0 in every frame.
+
+**Firmware-side counters** (OpenOCD `mdw` at `daq::g_stats`, about 16 min after reset, covering both runs):
+
+| ticks | completed | overruns | ring_overflows | i2c_errors | watchdog_aborts | frames_sent | max latency |
+|---|---|---|---|---|---|---|---|
+| 958 398 | 958 398 | 0 | 0 | 0 | 0 | 958 398 | 32 647 cycles = 388.7 µs |
+
+**Interpretation (what is established, what is not).**
+* Established: in 958 398 samples the firmware acquired every sample and handed every frame to the UART DMA, with no
+  I2C error, overrun or ring overflow.
+* Established: the 79 missing frames were lost after the UART DMA hand-off.
+* *Not* established: where. Candidates: ST-LINK virtual COM port buffer, USB, usbip forwarding into WSL2, the host
+  reading loop. The burst-like pattern (clusters of small gaps) is consistent with host-side read stalls, but this is
+  a hypothesis. T11 (native Linux capture) is the test that separates the WSL2 path from the rest.
+
+**Open issues.**
+1. *Wall clock vs sample count.* The 10 s capture contains 9.727 s of samples; the 60 s capture contains 60.872 s.
+   The sign changes between runs, so this is not a constant clock error of the MCU. It points at the host-side capture
+   timing (or the WSL2 clock). Unresolved; do not quote an absolute rate until T3 is done with an independent reference.
+2. T2 (zero loss end to end) is not met on the WSL2 path.
+
+**Bring-up notes (useful if it happens again).**
+* First symptom: `FATAL: MPU6050 not responding`. The firmware diagnostics reported
+  `failed at 'R:addr+W ACK' SR1=0x400 (AF) SR2=0x3 SCL=1 SDA=1` and an address scan with no answers, i.e. the master worked
+  and nobody acknowledged. An independent Arduino Uno I2C scanner also found nothing, which placed the fault on the
+  breakout. Cause: the SCL header pin was not making contact on the breakout. After fixing it, `who_am_i=0x68`.
+* Lesson: a voltage read on a header pin that is wired to the MCU says nothing about the solder joint on the other side.
+
+### 2026-11-02: native Linux capture (T11)
+
+**Setup.** Same board, sensor and firmware as above. Host: HP EliteBook 840 G7, Ubuntu 20.04.6, Python 3.8.10,
+numpy 1.17.4, `/dev/ttyACM0` directly (no WSL2, no usbip).
+
+**Results.**
+
+| Run | Wall time | Frames received | Seq range (contiguous part) | Lost | CRC errors | Jitter rms | Latency mean / max |
+|---|---|---|---|---|---|---|---|
+| linux1 | 60 s | 60 928 | 60 928 | 0 | 0 | not recorded | not recorded |
+| linux_10min | 600.19 s | 608 127 (11 + 608 116) | 608 116 after the start jump | 0 after the jump (see below) | 0 | 0.004 µs | 388.6 / 388.7 µs |
+
+linux_10min, static IMU: abs(a) = 1.0665 g (+66.5 mg), gyro bias [-1.01768, -1.52198, 0.34553] deg/s, temperature 23.2 C.
+
+**The "33.79 % lost" reported by `analyze` for linux_10min is not a loss during the capture.** `analyze` computes
+`lost = (last seq - first seq + 1) - received`. The sequence differences are: 608 125 steps of +1 and exactly one step of
++310 362, located at frame #10, i.e. 11 frames after the start of the file (seq 84745 .. 84755, then 395117). After the
+jump the 608 116 frames are strictly consecutive (395117 .. 1003232). The firmware `dropped` counter is 0 in the first
+and the last frame.
+
+* Established: there is a single discontinuity, at the very beginning of the file; no gap anywhere in the remaining
+  600 s; 0 CRC errors.
+* Cause (reproduced, see linux3/linux4 below): the first frames are stale data that sat in the ST-LINK / USB buffers
+  while nobody was reading (the firmware keeps streaming). `reset_input_buffer()` only clears the host buffer. The
+  jump equals the time the board ran unread.
+
+**Reproduction of the start jump (A/B).** Same PC, board left running unread for some minutes before each capture.
+
+| Run | Option | Frames | Frames before the jump | Jump |
+|---|---|---|---|---|
+| linux4 | `--warmup 0` (old behaviour) | 20 351 | 10 | 84 527 ticks (about 84 s) |
+| linux3 | `--warmup 1` (new default) | 60 800 | no jump | none, 0 lost, 0 CRC errors |
+
+The jump is present without the warm-up and absent with it. Limits: one run per arm, and the idle time before linux3
+was not measured. Fix: `capture` now reads and discards the first second (`--warmup`, default 1 s).
+
+**Clean 10 min run with the fix (linux_10min_b).** 608 511 frames received / 608 511 expected, lost 0, CRC errors 0,
+out of order 0. Jitter rms 0.004 µs, p-p 0.048 µs, max |err| 0.024 µs; latency 388.6 / 388.7 µs. Static IMU:
+|a| = 1.0623 g (+62.3 mg), gyro bias [-1.00551, -1.51608, 0.38757] deg/s. This meets T2 on native Linux.
+Rate: 608 511 frames in about 600 s = about 1014 frames/s (+1.4 %), consistent with the earlier native runs; T3 still open.
+
+**T7 across all sessions.** |a| error: +69.4, +72.9 (WSL2 runs), +66.5, +66.8, +62.3 mg (native Linux); gyro bias z:
+0.409, 0.406, 0.346, 0.274, 0.388 deg/s. Within the same day and setup the 5 mg / 0.05 deg/s criterion holds; across
+the whole set it does not (spread 10.6 mg and 0.135 deg/s). The sensor was not re-placed identically each time and
+temperature was not controlled, so the cause is not identified. The criterion is not loosened again.
+
+**Wall clock vs sample count (T3).** linux1: 60 928 frames in about 60 s; linux_10min: 608 116 live frames in 600.19 s,
+about 1013.2 frames/s, i.e. about 1.3 % more than the nominal 1000 Hz. The two windows are consistent with each other
+(the 60 s window has larger start/stop uncertainty). The MCU runs from the HSI oscillator, whose tolerance is of
+this order, so a fast HSI is a candidate explanation. Not established: it could also be the host timing. T3 stays open
+until the same capture is repeated with the HSE (done 2026-11-03, see below).
+
+**Interpretation.**
+* Established: on this PC, 10 minutes of streaming at 1 kHz arrive without gaps and without CRC errors.
+* Not established: that WSL2/usbip caused the earlier 79 lost frames (see T11 row).
+* Tool issue: `analyze` hides the structure of the loss behind one percentage. It should report the number of gaps,
+  their sizes and positions, and flag a discontinuity in the first frames.
+
+### 2026-11-03: HSE clock source (T3)
+
+**Change.** Firmware rebuilt with `-DUSE_HSE_BYPASS=ON`, which is now the default (8 MHz MCO of the ST-LINK as PLL source). Banner confirms the
+source: `E3-DAQ fw=0.1.0 rate=1000Hz i2c=400kHz baud=460800 clk=HSE who_am_i=0x68`. Host as on 2026-11-02, fixed `capture`.
+Build on Ubuntu 20.04: CMake >= 3.21 from pip, gcc-arm-none-eabi 9.2.1, OpenOCD 0.10 (flash with
+`interface/stlink-v2-1.cfg`, see `OPENOCD_INTERFACE`), linker script without `(READONLY)` (binutils < 2.35).
+
+**Result (hse1, 60 s).** 60 032 frames received / 60 032 expected, lost 0, CRC errors 0, out of order 0. Jitter rms
+0.004 µs, p-p 0.036 µs, latency 388.6 / 388.6 µs. Static IMU: |a| = 1.0678 g (+67.8 mg), gyro bias
+[-1.02377, -1.49142, 0.34633] deg/s.
+
+| Clock | Frames in the 60 s window | Rate |
+|---|---|---|
+| HSI | 60 800 - 60 928 | about 1013-1015 /s (+1.3 to +1.5 %) |
+| HSE | 60 032 | about 1000.5 /s (+0.05 %) |
+
+* Established: the +1.3 % excess disappears when the PLL is fed by the HSE; it was the HSI, not the host or the protocol.
+* Not established: accuracy at the 100 ppm level. The capture window is `time.time()` based and `read()` returns in
+  chunks of up to 4096 bytes (about 0.13 s of data), so the window is known to roughly 0.2 %. One run only.
+  To reach 100 ppm: record the host time of the first and last frame and capture at least 10 min.
+* The ST-LINK MCO accuracy was not measured.
+
+### Template for the next runs
+
+Copy this block for each new run and fill it with measured values.
+
+```
+### YYYY-MM-DD: <what changed>
+Setup: board / sensor / firmware commit (git describe) / toolchain / host / capture path
+Command: ...
+Result row: frames received, seq range, lost, CRC errors, jitter rms/p-p/max, latency mean/max
+Firmware counters: python tools/read_stats.py
+Interpretation: what is established, what is not
+```
+
+## Results (rate sweep, to be filled in)
 
 | Rate | Duration | Frames | Lost | CRC errors | Jitter rms [µs] | Jitter p-p [µs] | Latency max [µs] |
 |---|---|---|---|---|---|---|---|
 | 200 Hz | | | | | | | |
 | 500 Hz | | | | | | | |
-| 1000 Hz | | | | | | | |
+| 1000 Hz | 60 s (WSL2) | 60 793 | 79 | 6 | 0.004 | 0.048 | 388.7 |
+| 1000 Hz | 60 s (native Linux) | 60 928 | 0 | 0 | n/r | n/r | n/r |
+| 1000 Hz | 10 min (native Linux, old capture) | 608 127 | 0 after the 11 initial stale frames | 0 | 0.004 | n/r | 388.7 |
+| 1000 Hz | 10 min (native Linux, fixed capture) | 608 511 | 0 | 0 | 0.004 | 0.048 | 388.7 |
 
-Static IMU (10 min, board still): gyro bias [x y z] deg/s = ..., accelerometer norm error = ... mg,
+Static IMU, 10 min, board flat and still: gyro bias [x y z] deg/s = ..., accelerometer norm error = ... mg,
 gyro Allan deviation angle random walk = ... deg/√h.

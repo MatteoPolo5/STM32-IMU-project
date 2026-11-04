@@ -36,7 +36,7 @@ cmake --build --preset firmware --target flash   # OpenOCD + ST-LINK
 Alternatives: copy `imu_daq.bin` onto the `NODE_F446RE` USB drive that appears when the board is plugged in, or use
 STM32CubeProgrammer. The first configure downloads the CMSIS headers from GitHub (needs network access).
 
-Options: `-DSAMPLE_RATE_HZ=200`, `-DI2C_CLOCK_HZ=100000`, `-DUART_BAUD=921600`, `-DUSE_HSE_BYPASS=ON`,
+Options: `-DSAMPLE_RATE_HZ=200`, `-DI2C_CLOCK_HZ=100000`, `-DUART_BAUD=921600`, `-DUSE_HSE_BYPASS=OFF` (HSI only),
 and `-DMPU_ACCEL_FS_SEL=1`, `-DMPU_GYRO_FS_SEL=1` (pass them to `cmake --preset firmware`).
 
 ## First run checklist
@@ -53,7 +53,7 @@ and `-DMPU_ACCEL_FS_SEL=1`, `-DMPU_GYRO_FS_SEL=1` (pass them to `cmake --preset 
 |---|---|
 | `FATAL: MPU6050 not responding` | wiring (SDA/SCL swapped, no 3V3/GND), wrong address, no pull-ups |
 | `who_am_i=0x70/0x72/0x98` | clone or MPU6500/9250 on the breakout: usually works, register map is compatible |
-| LD2 never blinks, no banner | wrong serial port / baud, or the clock failed: try without `USE_HSE_BYPASS` |
+| LD2 never blinks, no banner | wrong serial port / baud, or the clock failed: the banner must say `clk=HSE`; try `-DUSE_HSE_BYPASS=OFF` |
 | frames lost at 1 kHz | I2C not really at 400 kHz (long wires, weak pull-ups), UART link overloaded, ring overflow: inspect `daq::g_stats` in GDB |
 | `crc_errors > 0` | UART baud mismatch (HSI accuracy), noisy USB cable/hub |
 | everything stops after some seconds | I2C bus lock-up: the watchdog should recover it (`watchdog_aborts` in `g_stats`) |

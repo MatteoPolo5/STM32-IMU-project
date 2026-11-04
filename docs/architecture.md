@@ -81,4 +81,4 @@ number still advances so the loss is visible in the log.
   or skipped sensor sample. Using the sensor's data-ready interrupt (INT pin -> EXTI) would remove this.
 * Timestamps are taken in software at ISR entry, not by hardware input capture.
 * Default clock source is the internal HSI (±1 % absolute accuracy). Jitter is unaffected (same clock domain), but absolute
-  time is. `-DUSE_HSE_BYPASS=ON` uses the 8 MHz ST-LINK MCO if it is available.
+  time is. The default build (`USE_HSE_BYPASS=ON`) uses the 8 MHz ST-LINK MCO if it is available and falls back to HSI otherwise; the HSI alone ran about 1.3 % fast on the test board.
