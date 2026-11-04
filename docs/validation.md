@@ -17,7 +17,7 @@ Every test has a pass criterion and the command that produces the number.
 | T7 | Static IMU sanity | board still on the table | see "Criterion revision" below | **Pass** (revised criterion) |
 | T8 | Fault injection: stalled main loop | debug build with `hw::delay_ms(200)` added to `daq::poll()` | `ring_overflows` increases, gaps visible in `seq`, stream recovers | Not done |
 | T9 | Fault injection: I2C | disconnect SDA for 1 s during streaming, reconnect | `i2c_errors` / `watchdog_aborts` increase, streaming resumes by itself | Not done |
-| T10 | Rate sweep | build with 200 / 500 / 1000 Hz | table below | Not done |
+| T10 | Rate sweep | build with 200 / 500 / 1000 Hz | table below | **Done** (200 / 500 / 1000 Hz, 0 lost in every run, see table below) |
 | T11 | Capture path independence | same 60 s capture on a native Linux PC (no virtual machine, no USB forwarding) | compare gap statistics with the first runs | **Done**: no loss on native Linux (60 s and 600 s), so the losses were not reproduced without the virtual-machine path. Consistent with that path being the cause, not proof of it (one board, one PC, two sessions) |
 
 ### Criterion revision (T7)
@@ -227,6 +227,35 @@ The three identical 60 s frame counts come from this quantisation and are not in
 norm error spans +62.3 to +70.5 mg and the z bias 0.227 to 0.409 deg/s, so the cross-session spread remains above the
 criterion for the z bias. Cause not identified (temperature was not recorded; sensor warm-up is a possibility, not tested).
 
+### 2026-11-04: rate sweep (T10) and a start-up anomaly
+
+**Sweep.** Builds with `-DSAMPLE_RATE_HZ=200` and `=500` (HSE, default otherwise), flashed with OpenOCD, 60 s captures on
+native Linux, `analyze --rate N`. Banner of the 200 Hz build: `E3-DAQ fw=3eeb0dd rate=200Hz i2c=400kHz baud=460800 clk=HSE
+who_am_i=0x68`; the banner of the 500 Hz build was not recorded.
+
+| Rate | Frames in 60 s | Rate vs nominal | Lost | CRC | Jitter rms / p-p | Latency mean / max | abs(a) [g] |
+|---|---|---|---|---|---|---|---|
+| 200 Hz | 12 014 | +0.12 % | 0 | 0 | 0.001 / 0.024 us | 388.5 / 388.5 us | 1.0683 |
+| 500 Hz | 30 036 | +0.12 % | 0 | 0 | 0.004 / 0.036 us | 388.6 / 388.6 us | 1.0685 |
+
+Rate vs nominal is within the capture-window uncertainty (about 0.3 %). The acquisition latency does not depend on the
+sampling rate: it is the I2C transaction time at 400 kHz (estimate 387.5 us). The jitter figures are small at all three
+rates; their differences were not investigated and should not be over-read.
+
+**Anomaly: sensor not answering after a flash.** Observed twice after programming with OpenOCD:
+1. 2026-11-03, after flashing the HSE build: banner `FATAL: MPU6050 not responding`; worked after checking the wiring and
+   re-powering the board (the exact action that fixed it was not recorded).
+2. 2026-11-04, after flashing the 200 Hz build: the first 60 s capture contains only the repeated `FATAL` message (8 520
+   bytes, 0 valid frames). After pressing RESET, the banner was normal (`who_am_i=0x68`) and the capture was clean.
+   The 500 Hz flash did not show it.
+
+Established: the firmware and the sensor work after a reset; the fault is intermittent and clears with a reset or a
+power cycle. **Repeat test (2026-11-04): 5 flashes in a row of the 1000 Hz build, each followed by a 3 s read: 5 of 5 OK, no
+`FATAL`.** The anomaly was not reproduced; with this few trials it is not excluded either. Not established: the cause. Candidates: an intermittent wire contact (as in the first bring-up), or the
+flash reset interrupting an I2C transfer and leaving the sensor holding SDA low. Open: if it happens again, note whether a plain RESET clears it
+(wire contact more likely) or only a power cycle does. I2C bus recovery (9 SCL pulses before initialisation) is a cheap
+robustness measure but was not added, since the failure was not reproduced.
+
 ### Template for the next runs
 
 Copy this block for each new run and fill it with measured values.
@@ -244,10 +273,11 @@ Interpretation: what is established, what is not
 
 | Rate | Duration | Frames | Lost | CRC errors | Jitter rms [µs] | Jitter p-p [µs] | Latency max [µs] |
 |---|---|---|---|---|---|---|---|
-| 200 Hz | | | | | | | |
-| 500 Hz | | | | | | | |
+| 200 Hz | 60 s (native Linux) | 12 014 | 0 | 0 | 0.001 | 0.024 | 388.5 |
+| 500 Hz | 60 s (native Linux) | 30 036 | 0 | 0 | 0.004 | 0.036 | 388.6 |
 | 1000 Hz | 60 s (virtual machine) | 60 793 | 79 | 6 | 0.004 | 0.048 | 388.7 |
 | 1000 Hz | 60 s (native Linux) | 60 928 | 0 | 0 | n/r | n/r | n/r |
+| 1000 Hz | 60 s x3 (native Linux, fixed capture) | 60 031 each | 0 | 0 | 0.004 | 0.048 | 388.6 |
 | 1000 Hz | 10 min (native Linux, old capture) | 608 127 | 0 after the 11 initial stale frames | 0 | 0.004 | n/r | 388.7 |
 | 1000 Hz | 10 min (native Linux, fixed capture) | 608 511 | 0 | 0 | 0.004 | 0.048 | 388.7 |
 
