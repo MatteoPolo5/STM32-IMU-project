@@ -111,7 +111,7 @@ the open points are in [docs/validation.md](docs/validation.md).
 
 | Metric | Result | Remark |
 |---|---|---|
-| Lost frames, end to end | **0 of 608 511** in 10 min, 0 CRC errors | native Linux, fixed `capture` |
+| Lost frames, end to end | **0 of 608 511** and **0 of 600 063** in two 10 min runs, 0 of 60 031 in each of three 60 s runs; 0 CRC errors | native Linux, fixed `capture` |
 | Lost samples, firmware side | 0 overruns, 0 ring overflows, 0 I2C errors, 0 watchdog aborts in 958 398 samples | counters read with OpenOCD |
 | Acquisition latency (tick to DMA done) | 388.6 µs mean, 388.7 µs max | 39 % of the 1 ms period; bus-time estimate is 387.5 µs |
 | Timer-interrupt entry jitter | 0.004 µs rms, 0.036-0.048 µs peak-to-peak | CPU almost idle: this is *not* end-to-end sampling jitter |

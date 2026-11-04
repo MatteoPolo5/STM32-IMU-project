@@ -10,7 +10,7 @@ Every test has a pass criterion and the command that produces the number.
 | T1 | Sensor bring-up | banner shows `who_am_i=0x68` | present | **Pass** (2026-10-28) |
 | T2 | No lost samples, end to end | 10 min capture at 1 kHz, `analyze` | `frames_lost == 0`, `crc_errors == 0` | **Pass on native Linux**: 600 s, 608 511 frames, 0 lost, 0 CRC errors with the fixed `capture` (linux_10min_b, see run log 2026-11-02). Not met on the first (virtual-machine USB) path: 79 lost (0.13 %) in 60 s |
 | T2b | No lost samples, firmware side | internal counters via `tools/read_stats.py` | overruns = ring overflows = I2C errors = watchdog aborts = 0, `frames_sent == ticks` | **Pass**: 958 398 samples, all counters 0 |
-| T3 | Absolute sampling rate | compare sample count with an independent time reference | within 100 ppm (HSE) | **Partly verified**: HSI build ran about +1.3 % fast (1013-1015 frames/s); HSE build gives 60 032 frames in 60 s (+0.05 %, inside the host timing uncertainty of about 0.2 %). Not yet shown within 100 ppm, see run log 2026-11-03 |
+| T3 | Absolute sampling rate | compare sample count with an independent time reference | within 100 ppm (HSE) | **Partly verified**: HSI build ran about +1.3 % fast (1013-1015 frames/s); HSE build gives 60 032 frames in 60 s (+0.05 %, inside the host timing uncertainty of about 0.2 %). Repeated 2026-11-04: +0.05 % (60 s), +0.01 % (600 s). Not yet shown within 100 ppm, see run logs 2026-11-03 and 2026-11-04 |
 | T4 | ISR-entry jitter (from log) | `jitter_us` in `summary.json` | report rms, peak-to-peak, max | **Recorded** (table below) |
 | T5 | Jitter, independent check | logic analyzer on a pin toggled in the TIM2 ISR | compare with T4 | Not done |
 | T6 | Acquisition latency | `latency_us` | max < 80 % of the period | **Pass**: 388.7 µs max (39 % of 1 ms) |
@@ -199,6 +199,33 @@ Build on Ubuntu 20.04: CMake >= 3.21 from pip, gcc-arm-none-eabi 9.2.1, OpenOCD 
   chunks of up to 4096 bytes (about 0.13 s of data), so the window is known to roughly 0.2 %. One run only.
   To reach 100 ppm: record the host time of the first and last frame and capture at least 10 min.
 * The ST-LINK MCO accuracy was not measured.
+
+### 2026-11-04: reproducibility (3 x 60 s, 1 x 600 s)
+
+**Setup.** Same board, sensor and host as 2026-11-03; firmware built with the default (HSE) configuration, board left still
+and powered between runs. The firmware banner was not recorded in this session. Criteria written before the runs: 0 lost,
+0 CRC errors, latency max 388-390 us, frame count within +-0.3 % of nominal.
+
+| Run | Window | Frames | Lost | CRC | Jitter rms / p-p | Latency mean / max | abs(a) [g] (error) | Gyro bias [deg/s] |
+|---|---|---|---|---|---|---|---|---|
+| rep60_1 | 60 s | 60 031 | 0 | 0 | 0.004 / 0.048 us | 388.6 / 388.6 us | 1.0705 (+70.5 mg) | [-1.00538, -1.54665, 0.22743] |
+| rep60_2 | 60 s | 60 031 | 0 | 0 | 0.004 / 0.048 us | 388.6 / 388.6 us | 1.0699 (+69.9 mg) | [-1.0157, -1.54193, 0.23788] |
+| rep60_3 | 60 s | 60 031 | 0 | 0 | 0.004 / 0.048 us | 388.6 / 388.6 us | 1.0696 (+69.6 mg) | [-1.01454, -1.54423, 0.24195] |
+| rep600 | 600 s | 600 063 | 0 | 0 | 0.004 / 0.048 us | 388.6 / 388.6 us | 1.0689 (+68.9 mg) | [-1.0022, -1.54017, 0.26108] |
+
+**Result against the criteria.** All four runs meet them: no lost frames, no CRC errors, latency 388.6 us, frame counts
++0.05 % (60 s) and +0.01 % (600 s) from nominal. Timing numbers are identical across runs.
+
+**Limits of the rate figure.** `capture` reads in chunks of 4096 bytes (128 frames, 0.128 s) and stops at a chunk
+boundary: every run wrote an exact multiple of 4096 bytes (469 chunks for 60 s, 4688 for 600 s). The window is therefore
+quantised to 0.128 s, i.e. about 0.2 % at 60 s and about 0.02 % (210 ppm) at 600 s. The excess of 63 frames over 600 s
+(105 ppm) is smaller than that uncertainty, so it is consistent with no clock error, but it does not demonstrate 100 ppm.
+The three identical 60 s frame counts come from this quantisation and are not independent evidence of the rate.
+
+**Static IMU repeatability.** Within this session the four runs differ by 1.6 mg in the norm error and by 0.0135 / 0.0065 /
+0.034 deg/s in the gyro bias (x / y / z): within the 5 mg and 0.05 deg/s criterion. Across all native-Linux sessions the
+norm error spans +62.3 to +70.5 mg and the z bias 0.227 to 0.409 deg/s, so the cross-session spread remains above the
+criterion for the z bias. Cause not identified (temperature was not recorded; sensor warm-up is a possibility, not tested).
 
 ### Template for the next runs
 
