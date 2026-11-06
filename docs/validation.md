@@ -16,7 +16,7 @@ Every test has a pass criterion and the command that produces the number.
 | T6 | Acquisition latency | `latency_us` | max < 80 % of the period | **Pass**: 388.7 µs max (39 % of 1 ms) |
 | T7 | Static IMU sanity | board still on the table | see "Criterion revision" below | **Pass** (revised criterion) |
 | T8 | Fault injection: stalled main loop | debug build with `hw::delay_ms(200)` added to `daq::poll()` | `ring_overflows` increases, gaps visible in `seq`, stream recovers | Not done |
-| T9 | Fault injection: I2C | disconnect SDA for 1 s during streaming, reconnect | `i2c_errors` / `watchdog_aborts` increase, streaming resumes by itself | Not done |
+| T9 | Fault injection: I2C | disconnect SDA for 1 s during streaming, reconnect | `i2c_errors` / `watchdog_aborts` increase, streaming resumes by itself | **Pass on resume and loss accounting** (2026-11-04); `i2c_errors` / `watchdog_aborts` counters not read |
 | T10 | Rate sweep | build with 200 / 500 / 1000 Hz | table below | **Done** (200 / 500 / 1000 Hz, 0 lost in every run, see table below) |
 | T11 | Capture path independence | same 60 s capture on a native Linux PC (no virtual machine, no USB forwarding) | compare gap statistics with the first runs | **Done**: no loss on native Linux (60 s and 600 s), so the losses were not reproduced without the virtual-machine path. Consistent with that path being the cause, not proof of it (one board, one PC, two sessions) |
 
@@ -255,6 +255,29 @@ power cycle. **Repeat test (2026-11-04): 5 flashes in a row of the 1000 Hz build
 flash reset interrupting an I2C transfer and leaving the sensor holding SDA low. Open: if it happens again, note whether a plain RESET clears it
 (wire contact more likely) or only a power cycle does. I2C bus recovery (9 SCL pulses before initialisation) is a cheap
 robustness measure but was not added, since the failure was not reproduced.
+
+### 2026-11-04: SDA disconnected during streaming (T9)
+
+**Setup.** 1000 Hz, HSE build (default), native Linux host, 40 s capture (`t9_sda.bin`). At about 15 s the SDA wire (D14)
+was pulled by hand and reconnected; the real duration of the disconnection was not timed by hand.
+
+**Results.**
+* Frames received 37 053, one gap of 2 995 samples after 15 165 frames, then 21 888 consecutive frames to the end of the
+  capture. No other gap, 0 CRC errors, 11 non-frame bytes (a partial frame at the start of the file, after the warm-up).
+* The firmware `dropped` counter goes from 0 to 2 995, equal to the gap in `seq`: the firmware accounted for every
+  sample it could not acquire.
+* Duration of the gap from the DWT timestamps of the frames around it: 2.996 s, consistent with 2 995 lost ticks at 1 kHz
+  (both come from the same MCU clock, so this checks consistency, not the absolute rate).
+* Samples around the gap (seq 476300, 476301 | 479297, 479298, 479299): accelerations 1.02-1.20 g before, 1.07 g after;
+  no saturated or all-zero values. The gyro reads 45-47 deg/s before the gap and about -2.8 deg/s after it. My reading is
+  that the board was being handled by hand when the wire was pulled (not measured); it is not a sign of corrupted data.
+
+**Interpretation.**
+* Established: after a loss of the I2C line lasting about 3 s the firmware resumed streaming by itself, without reset, and
+  the loss is fully accounted for by `dropped`; no frames with corrupted content were emitted around the gap.
+* Not established: how many I2C errors / watchdog aborts the firmware counted (`read_stats.py` was not available on this
+  host), and whether a shorter or longer interruption, or one in the middle of a transfer, behaves the same. One
+  repetition only.
 
 ### Template for the next runs
 
