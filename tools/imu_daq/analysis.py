@@ -157,3 +157,58 @@ def allan_deviation(x: np.ndarray, rate_hz: float, n_taus: int = 25):
         taus.append(m / rate_hz)
         adev.append(np.sqrt(0.5 * np.mean(d ** 2)) / (m / rate_hz))
     return np.asarray(taus), np.asarray(adev)
+
+
+def allan_summary(tau: np.ndarray, adev: np.ndarray) -> dict:
+    """Noise figures read from an Allan deviation curve of a gyro axis [deg/s].
+
+    * angle random walk (ARW) [deg/sqrt(h)]: the curve value at tau = 1 s times 60. It is only meaningful if the curve
+      follows the -1/2 slope around 1 s; `slope_at_1s` is returned so that this can be checked.
+    * bias instability [deg/h]: the minimum of the curve divided by 0.664. It is only meaningful if the curve has stopped
+      falling (`bias_instability_observed`: log-log slope over the last decade of tau above -0.25); a curve that still
+      follows the -1/2 slope at the longest tau has not reached its minimum yet.
+    """
+    out = {"arw_deg_per_sqrt_h": None, "slope_at_1s": None, "bias_instability_deg_per_h": None,
+           "bias_instability_tau_s": None, "bias_instability_observed": False, "slope_last_decade": None,
+           "tau_max_s": None}
+    if tau.size < 3:
+        return out
+    lt, la = np.log10(tau), np.log10(adev)
+    out["tau_max_s"] = float(tau[-1])
+    if tau[0] <= 1.0 <= tau[-1]:
+        out["arw_deg_per_sqrt_h"] = float(10 ** np.interp(0.0, lt, la) * 60.0)
+        sel = (tau >= 0.4) & (tau <= 2.5)
+        if sel.sum() >= 2:
+            out["slope_at_1s"] = float(np.polyfit(lt[sel], la[sel], 1)[0])
+    k = int(np.argmin(adev))
+    out["bias_instability_deg_per_h"] = float(adev[k] / 0.664 * 3600.0)
+    out["bias_instability_tau_s"] = float(tau[k])
+    # The noise floor counts as observed only if the curve has stopped falling along the -1/2 line: the log-log slope over
+    # the last decade of tau must be above -0.25 (flat bottom or rising). A curve still falling at -0.5 has not reached
+    # its minimum, so what is read from it is only an upper bound.
+    tail = tau >= tau[-1] / 10.0
+    slope_tail = float(np.polyfit(lt[tail], la[tail], 1)[0]) if tail.sum() >= 3 else None
+    out["slope_last_decade"] = slope_tail
+    out["bias_instability_observed"] = bool(slope_tail is not None and slope_tail > -0.25)
+    return out
+
+
+def host_rate(t_s: np.ndarray, nbytes: np.ndarray, frame_size: int = 32) -> dict:
+    """Frame rate seen by the host: slope of cumulative frames versus host time.
+
+    `t_s` are host monotonic times at which chunks of the serial stream were read and `nbytes` the cumulative number
+    of bytes received at those times. Fitting a line makes the result independent of when the capture started or
+    stopped and of a constant USB/driver latency. Chunk timestamps are quantised (a read returns when its buffer
+    fills), so the first and second half of the capture are fitted separately as a consistency check.
+    """
+    t = np.asarray(t_s, dtype=np.float64)
+    f = np.asarray(nbytes, dtype=np.float64) / frame_size
+    if t.size < 10 or t[-1] - t[0] <= 0:
+        raise ValueError("not enough timing samples")
+
+    def slope(a: slice) -> float:
+        return float(np.polyfit(t[a], f[a], 1)[0])
+
+    h = t.size // 2
+    return {"rate_hz": slope(slice(None)), "rate_hz_first_half": slope(slice(0, h)),
+            "rate_hz_second_half": slope(slice(h, None)), "duration_s": float(t[-1] - t[0]), "chunks": int(t.size)}

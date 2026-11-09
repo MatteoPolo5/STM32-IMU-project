@@ -56,6 +56,20 @@ report.acc_norm_err_mg = (mean(sqrt(sum(acc.^2, 2))) - 1) * 1e3;
 report.gyro_bias_dps   = mean(gyro);
 report.gyro_std_dps    = std(gyro);
 
+% ---- gyro Allan deviation ------------------------------------------------------
+report.allan_arw_deg_per_sqrt_h = NaN(1, 3);
+report.allan_slope_at_1s = NaN(1, 3);
+report.allan_bias_instability_deg_per_h = NaN(1, 3);
+report.allan_bias_instability_observed = false(1, 3);
+for i = 1:3
+    [tau_, adev_] = allan_deviation(gyro(:, i), rate_hz);
+    a_ = allan_summary(tau_, adev_);
+    report.allan_arw_deg_per_sqrt_h(i) = a_.arw_deg_per_sqrt_h;
+    report.allan_slope_at_1s(i) = a_.slope_at_1s;
+    report.allan_bias_instability_deg_per_h(i) = a_.bias_instability_deg_per_h;
+    report.allan_bias_instability_observed(i) = a_.bias_instability_observed;
+end
+
 % ---- print --------------------------------------------------------------------
 fprintf('frames: %d received / %d expected, lost %d (%.4f %%), crc errors %d, out of order %d\n', ...
         N, expected, report.frames_lost, report.loss_percent, L.n_bad_crc, report.out_of_order);
@@ -65,6 +79,9 @@ fprintf('jitter: rms %.3f us, peak-to-peak %.3f us, max |err| %.3f us\n', ...
 fprintf('latency tick->DMA done: mean %.1f us, max %.1f us\n', report.latency_mean_us, report.latency_max_us);
 fprintf('static IMU: |a| error %+.1f mg, gyro bias [%.4f %.4f %.4f] deg/s\n', ...
         report.acc_norm_err_mg, report.gyro_bias_dps);
+
+fprintf('gyro Allan ARW [%.3f %.3f %.3f] deg/sqrt(h) (slope at 1 s [%+.2f %+.2f %+.2f]); bias instability observed: [%d %d %d]\n', ...
+        report.allan_arw_deg_per_sqrt_h, report.allan_slope_at_1s, report.allan_bias_instability_observed);
 
 % ---- plots (skipped when no display is available) -----------------------------
 if usejava('desktop')

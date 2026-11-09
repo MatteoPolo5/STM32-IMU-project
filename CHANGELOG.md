@@ -1,6 +1,13 @@
 # Changelog
 
 ## [Unreleased]
+- `analyze` reports gyro angle random walk and bias instability from the Allan deviation (Python and MATLAB), with checks
+  that the curve is on the -1/2 slope and that a minimum was actually observed.
+- `calibrate`: six-position accelerometer offset/sensitivity and gyro bias, validated on a held-out capture
+  (Python `calibration.py`, MATLAB `calibrate_six_position.m`, tests in pytest and Octave).
+- `capture` writes a `.times.csv` with host timestamps next to the log and `analyze` prints the frame rate against the
+  host clock.
+- MATLAB gained the Allan deviation (it was listed in 0.1.0 but only the Python tool had it).
 
 ## [0.1.0]
 - Timer-driven (TIM2) IMU sampling, 1 kHz default, MPU6050 over I2C1 at 400 kHz.

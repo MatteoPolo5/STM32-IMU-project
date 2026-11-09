@@ -140,6 +140,20 @@ Plots from the 10 min run (600 063 frames at 1 kHz), produced by `python -m imu_
 Not verified yet: sampling rate within 100 ppm, jitter with a logic analyser, behaviour under injected faults
 (stalled main loop, disconnected SDA), the 200/500/1000 Hz sweep, Allan-deviation figures.
 
+### Noise figures and static calibration
+
+`analyze` also prints, per gyro axis, the angle random walk and the bias instability read from the Allan deviation, and
+says when the data are too short for the latter. `calibrate` fits an accelerometer offset and sensitivity from six static
+captures (one per axis direction) and the gyro bias, and checks the result on a capture that was not used in the fit:
+
+```bash
+python -m imu_daq calibrate --xp xp.bin --xn xn.bin --yp yp.bin --yn yn.bin --zp zp.bin --zn zn.bin \
+       --validate held_out.bin --out calibration.json
+```
+
+MATLAB: `calibrate_six_position(means)`, `allan_deviation(x, rate)` and `allan_summary(tau, adev)` in `tools/matlab`.
+Offset and per-axis sensitivity only; misalignment and gyro scale factor are not estimated.
+
 ## Repository layout
 
 ```
@@ -168,7 +182,7 @@ python -m pytest tests/python -q                                                
 - [ ] Hardware input-capture timestamps instead of software timestamps at ISR entry
 - [ ] Port the pipeline to FreeRTOS tasks and compare latency/jitter with this bare-metal version
 - [ ] On-target filtering: fixed-size EKF / complementary filter on the sampled data
-- [ ] IMU calibration (bias, scale, misalignment) from static captures
+- [x] IMU static calibration (offset, sensitivity, gyro bias); misalignment and gyro scale factor still open
 
 ## License
 

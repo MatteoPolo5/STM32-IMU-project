@@ -19,6 +19,8 @@ Every test has a pass criterion and the command that produces the number.
 | T9 | Fault injection: I2C | disconnect SDA for 1 s during streaming, reconnect | `i2c_errors` / `watchdog_aborts` increase, streaming resumes by itself | **Pass on resume and loss accounting** (2026-11-04); `i2c_errors` / `watchdog_aborts` counters not read |
 | T10 | Rate sweep | build with 200 / 500 / 1000 Hz | table below | **Done** (200 / 500 / 1000 Hz, 0 lost in every run, see table below) |
 | T11 | Capture path independence | same 60 s capture on a native Linux PC (no virtual machine, no USB forwarding) | compare gap statistics with the first runs | **Done**: no loss on native Linux (60 s and 600 s), so the losses were not reproduced without the virtual-machine path. Consistent with that path being the cause, not proof of it (one board, one PC, two sessions) |
+| T12 | Gyro noise (Allan deviation) | 10 min static capture, `analyze` prints ARW and bias instability per axis | report values with the observed/not-observed flags; no pass/fail (compare with the datasheet value, to be looked up) | Not done |
+| T13 | Static calibration | six-position captures + 1 held-out orientation, `calibrate` | held-out abs(a) error after calibration below 10 mg (before: about +60 to +70 mg); gyro bias spread over the six positions below 0.05 deg/s | Not done |
 
 ### Criterion revision (T7)
 
@@ -31,6 +33,32 @@ before quoting them). The criterion was therefore replaced, *after* seeing the d
 * absolute accuracy is addressed by a calibration step (see roadmap), not by this test.
 
 Result: run 1 vs run 2 differ by 3.5 mg (norm) and by 0.003 / 0.013 / 0.003 deg/s (gyro bias) -> pass.
+
+## Allan deviation and calibration (T12, T13)
+
+Criteria are fixed here before the measurements.
+
+**T12.** Board flat and still, 10 min at 1 kHz, no touching. `python -m imu_daq analyze` prints, for each gyro axis, the
+angle random walk (curve value at tau = 1 s, valid only if the slope there is about -0.5) and the bias instability
+(curve minimum / 0.664, valid only if the curve has stopped falling before the longest tau). With 10 min of data the
+longest tau is 200 s; a flat bottom may not be visible, in which case only an upper bound is stated.
+
+**T13.** Six captures of about 30 s each with the board resting on a table with one axis pointing up or down in turn
+(+x, -x, +y, -y, +z, -z; the board must not move during a capture; a book or a box corner helps to hold the edges level),
+plus one capture in a different orientation (for example resting on an edge at about 45 degrees) that is **not** used
+in the fit.
+
+```bash
+cd tools
+python -m imu_daq capture --port /dev/ttyACM0 --duration 30 --out ../data/cal_zp.bin    # repeat for the other five
+python -m imu_daq calibrate --xp ../data/cal_xp.bin --xn ../data/cal_xn.bin --yp ../data/cal_yp.bin \
+    --yn ../data/cal_yn.bin --zp ../data/cal_zp.bin --zn ../data/cal_zn.bin \
+    --validate ../data/cal_held.bin --out ../results/calibration.json
+```
+
+The model is offset + per-axis sensitivity for the accelerometer and offset for the gyroscope. Axis misalignment and
+gyro sensitivity are not calibrated (the latter needs a known rotation), and the temperature dependence is not modelled:
+the calibration is valid near the temperature at which it was made (recorded in the JSON).
 
 ## How to reproduce
 
