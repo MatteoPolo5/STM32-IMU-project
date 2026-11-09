@@ -9,3 +9,13 @@
 - Binary framing with CRC-16 streamed over UART with DMA; DWT cycle-counter timestamps.
 - Host tools in Python and MATLAB: capture, parsing, loss/jitter/latency/IMU statistics, Allan deviation.
 - Host unit tests (GoogleTest, pytest) and CI.
+- Validated on hardware (see `docs/validation.md`): 0 lost frames in 10 min at 1 kHz, 60 s runs at 200 / 500 / 1000 Hz,
+  I2C disconnection test (firmware resumes by itself, `dropped` counter equals the gap).
+- Clock: the ST-LINK 8 MHz output (HSE bypass) is now the default PLL source, with automatic fallback to HSI
+  (`-DUSE_HSE_BYPASS=OFF` for HSI only). On the test board the HSI ran about 1.3 % fast. The banner reports `clk=HSE` or `clk=HSI`.
+- `capture` discards the first second after opening the port (`--warmup`): frames buffered in the ST-LINK while nobody was
+  reading appeared as a false sequence jump at the start of a log.
+- Build compatibility: `-DOPENOCD_INTERFACE=...` for OpenOCD older than 0.11 (Ubuntu 20.04); linker script without
+  `(READONLY)` so that binutils older than 2.35 can link it.
+- Known open points: sampling rate verified only to about 0.3 % (not 100 ppm); occasional "sensor not answering" after
+  a flash seen twice and not reproduced in 5 repeats; static IMU bias differs between sessions.

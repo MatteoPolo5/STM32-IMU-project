@@ -132,6 +132,11 @@ What the measurements showed:
 - The static accelerometer error (+62 to +73 mg) and the gyro bias drift between sessions by more than the repeatability
   criterion set in the test plan, so absolute accuracy needs a calibration step (see roadmap).
 
+Plots from the 10 min run (600 063 frames at 1 kHz), produced by `python -m imu_daq analyze`:
+
+![Timer-interrupt entry jitter](docs/img/timing_jitter.png)
+![Acquisition latency, tick to DMA done](docs/img/latency.png)
+
 Not verified yet: sampling rate within 100 ppm, jitter with a logic analyser, behaviour under injected faults
 (stalled main loop, disconnected SDA), the 200/500/1000 Hz sweep, Allan-deviation figures.
 
