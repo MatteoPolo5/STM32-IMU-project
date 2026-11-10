@@ -23,7 +23,7 @@ function check_calibration()
     assert(abs(s.arw_deg_per_sqrt_h - 0.18) < 1e-9, 'ARW wrong');
     assert(abs(s.slope_at_1s + 0.5) < 1e-9, 'slope wrong');
     assert(~s.bias_instability_observed, 'a falling curve must not report a minimum');
-    adev2 = sqrt((0.003^2 ./ tau) + 1e-8 * tau);         % white noise + random walk: minimum inside the range
+    adev2 = sqrt((0.003^2 ./ tau) + 1e-6 * tau);         % white noise + random walk: minimum at tau = 3 s (about 100 averages)
     s2 = allan_summary(tau, adev2);
     assert(s2.bias_instability_observed, 'a curve with a rising end must report a minimum');
     disp('OK: calibration and Allan summary behave as expected');

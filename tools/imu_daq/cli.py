@@ -59,7 +59,11 @@ def cmd_analyze(a: argparse.Namespace) -> int:
         return 1
     loss = an.loss_report(log)
     tim = an.timing_report(log, a.rate, a.cpu_hz)
-    sc = an.scale(log, a.cpu_hz, a.accel_fs, a.gyro_fs)
+    sc_all = an.scale(log, a.cpu_hz, a.accel_fs, a.gyro_fs)
+    sc = sc_all
+    if a.trim > 0:  # static statistics and Allan without the first/last seconds (handling of the board)
+        keep = (sc_all.t >= a.trim) & (sc_all.t <= sc_all.t[-1] - a.trim)
+        sc = an.Scaled(t=sc_all.t[keep], acc_g=sc_all.acc_g[keep], gyro_dps=sc_all.gyro_dps[keep], temp_c=sc_all.temp_c[keep])
     imu = an.imu_report(sc)
     report = {"file": str(a.logfile), "loss": asdict(loss), "timing": asdict(tim), "imu_static": asdict(imu)}
     allan = {}
@@ -102,7 +106,7 @@ def cmd_analyze(a: argparse.Namespace) -> int:
             continue
         bi = (f"bias instability {g['bias_instability_deg_per_h']:.1f} deg/h at tau {g['bias_instability_tau_s']:.1f} s"
               if g["bias_instability_observed"] else
-              f"no minimum within tau <= {g['tau_max_s']:.0f} s (bias instability not observed)")
+              f"bias instability not observed (tau <= {g['tau_max_s']:.0f} s; needs a floor and >= 20 averages at the minimum)")
         sl = f"{g['slope_at_1s']:+.2f}" if g["slope_at_1s"] is not None else "n/a"
         print(f"gyro {name} Allan: ARW {g['arw_deg_per_sqrt_h']:.3f} deg/sqrt(h) (slope at 1 s {sl}), {bi}")
     print(f"written: {out}/summary.json" + ("" if a.no_plots else " + plots"))
@@ -238,6 +242,8 @@ def main(argv=None) -> int:
     s.add_argument("--gyro-fs", type=int, default=0, choices=range(4), help="MPU_GYRO_FS_SEL used in the firmware")
     s.add_argument("--out", default="results/latest")
     s.add_argument("--no-plots", action="store_true")
+    s.add_argument("--trim", type=float, default=0.0,
+                   help="seconds dropped at the start and end for the static IMU statistics and the Allan deviation")
     s.set_defaults(fn=cmd_analyze)
 
     s = sub.add_parser("calibrate", help="static calibration from six captures (+-x, +-y, +-z up) and held-out checks")

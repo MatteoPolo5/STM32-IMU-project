@@ -91,7 +91,7 @@ def test_allan_finds_a_minimum_when_there_is_one():
     tau, adev = an.allan_deviation(x, fs)
     s = an.allan_summary(tau, adev)
     assert s["bias_instability_observed"]
-    assert 3.0 < s["bias_instability_tau_s"] <= 200.0
+    assert 2.0 < s["bias_instability_tau_s"] <= 30.0      # searched only up to 0.15 * 200 s
 
 
 def _frames(acc_g, gyro_dps, n=3000, rate=1000, seed=0):
@@ -132,3 +132,12 @@ def test_calibrate_cli_end_to_end(tmp_path):
     h = res["held_out"][str(held)]
     assert abs(h["norm_error_mg_before"]) > 20
     assert abs(h["norm_error_mg_after"]) < 5
+
+
+def test_allan_minimum_with_too_few_averages_is_not_reported():
+    # Short record: the minimum of the curve (near 1.7 s) lies beyond the range with 20 independent averages.
+    tau = np.logspace(-3, 1, 25)
+    adev = np.sqrt(0.003 ** 2 / tau + 1e-6 * tau)        # minimum near 1.7 s, but tau_max is only 10 s (T = 30 s)
+    s = an.allan_summary(tau, adev)
+    assert s["tau_reliable_max_s"] == pytest.approx(1.5)
+    assert not s["bias_instability_observed"]             # still falling inside the reliable range

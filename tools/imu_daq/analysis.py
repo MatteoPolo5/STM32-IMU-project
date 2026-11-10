@@ -164,13 +164,15 @@ def allan_summary(tau: np.ndarray, adev: np.ndarray) -> dict:
 
     * angle random walk (ARW) [deg/sqrt(h)]: the curve value at tau = 1 s times 60. It is only meaningful if the curve
       follows the -1/2 slope around 1 s; `slope_at_1s` is returned so that this can be checked.
-    * bias instability [deg/h]: the minimum of the curve divided by 0.664. It is only meaningful if the curve has stopped
-      falling (`bias_instability_observed`: log-log slope over the last decade of tau above -0.25); a curve that still
-      follows the -1/2 slope at the longest tau has not reached its minimum yet.
+    * bias instability [deg/h]: the minimum of the curve divided by 0.664, searched only where the record holds at least
+      20 independent averages (tau <= 0.15 tau_max, because the curve is computed up to tau_max = T / 3; the relative
+      error of an Allan estimate is about 1 / sqrt(2 (T / tau - 1))). It is reported as observed only if the curve has
+      stopped falling there: log-log slope over the last 0.6 decade of that range (tau from tau_rel / 4) above -0.25. A curve that still follows
+      the -1/2 slope has not reached its floor yet.
     """
     out = {"arw_deg_per_sqrt_h": None, "slope_at_1s": None, "bias_instability_deg_per_h": None,
-           "bias_instability_tau_s": None, "bias_instability_observed": False, "slope_last_decade": None,
-           "tau_max_s": None}
+           "bias_instability_tau_s": None, "bias_instability_observed": False, "slope_tail": None,
+           "clusters_at_min": None, "tau_reliable_max_s": None, "tau_max_s": None}
     if tau.size < 3:
         return out
     lt, la = np.log10(tau), np.log10(adev)
@@ -180,16 +182,19 @@ def allan_summary(tau: np.ndarray, adev: np.ndarray) -> dict:
         sel = (tau >= 0.4) & (tau <= 2.5)
         if sel.sum() >= 2:
             out["slope_at_1s"] = float(np.polyfit(lt[sel], la[sel], 1)[0])
-    k = int(np.argmin(adev))
+    tau_rel = 0.15 * tau[-1]
+    out["tau_reliable_max_s"] = float(tau_rel)
+    rel = tau <= tau_rel * (1 + 1e-9)
+    if rel.sum() < 3:
+        return out
+    k = int(np.argmin(np.where(rel, adev, np.inf)))
     out["bias_instability_deg_per_h"] = float(adev[k] / 0.664 * 3600.0)
     out["bias_instability_tau_s"] = float(tau[k])
-    # The noise floor counts as observed only if the curve has stopped falling along the -1/2 line: the log-log slope over
-    # the last decade of tau must be above -0.25 (flat bottom or rising). A curve still falling at -0.5 has not reached
-    # its minimum, so what is read from it is only an upper bound.
-    tail = tau >= tau[-1] / 10.0
-    slope_tail = float(np.polyfit(lt[tail], la[tail], 1)[0]) if tail.sum() >= 3 else None
-    out["slope_last_decade"] = slope_tail
-    out["bias_instability_observed"] = bool(slope_tail is not None and slope_tail > -0.25)
+    out["clusters_at_min"] = float(3.0 * tau[-1] / tau[k])
+    tail = rel & (tau >= tau_rel / 4.0)
+    if tail.sum() >= 3:
+        out["slope_tail"] = float(np.polyfit(lt[tail], la[tail], 1)[0])
+        out["bias_instability_observed"] = bool(out["slope_tail"] > -0.25)
     return out
 
 

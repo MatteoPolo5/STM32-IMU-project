@@ -415,6 +415,21 @@ Mean [-1.0084, -1.5124, 0.3266] deg/s; **spread between resets 0.0092 / 0.0047 /
   Next test: repeat the x-up capture now that the board is warm; a z bias of about 0.3 deg/s would point at warm-up or
   temperature, a value of about 0.23 deg/s at an effect of the orientation.
 
+### 2026-11-10: x-up capture repeated; Allan criterion revised after a misleading output
+
+**x-up repeated (xp_again, 30 s, board warm).** `analyze` on the whole file (no trimming): gyro bias [-0.99419, -1.5127, 0.4] deg/s,
+|a| = 1.0604 g (+60.4 mg), frames 30 079 / 30 079, 0 lost, host rate 999.990 frames/s (-10 ppm). The z value 0.40 deg/s
+matches neither 0.23 (first +x capture) nor 0.33 (flat), but this statistic included the seconds in which the board was being
+put in place, so it is **not interpreted**. It is to be re-analysed with `--trim 3` (new option) before drawing a conclusion.
+
+**Tool defect found.** The Allan summary printed "bias instability 13-20 deg/h at tau 2-3 s" for this 30 s record and had
+printed 3.8 deg/h at 120 s for the 10 min record of 2026-11-09. Both rest on a handful of independent averages (T / tau of 10
+and 5) and are not meaningful. The rule was changed: the bias instability is searched only where the record holds at least
+20 independent averages (tau <= 0.15 tau_max, i.e. up to 30 s for a 10 min record), and reported as observed only if the
+curve has stopped falling there. Under the new rule the 3.8 deg/h figure of 2026-11-09 would not be reported; the statement
+"bias instability not established" in that entry stands. `analyze` (Python and MATLAB) also has `--trim` / `trim_s` for the
+static statistics and the Allan deviation.
+
 ### Template for the next runs
 
 Copy this block for each new run and fill it with measured values.

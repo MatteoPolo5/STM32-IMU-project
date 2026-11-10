@@ -1,4 +1,4 @@
-function report = analyze_log(filename, rate_hz, cpu_hz, accel_fs, gyro_fs)
+function report = analyze_log(filename, rate_hz, cpu_hz, accel_fs, gyro_fs, trim_s)
 %ANALYZE_LOG  Loss, timing and static-IMU statistics of a capture from the E3 firmware.
 %   report = analyze_log('data/capture.bin')
 %   report = analyze_log('data/capture.bin', 1000, 84e6, 0, 0)
@@ -7,6 +7,7 @@ function report = analyze_log(filename, rate_hz, cpu_hz, accel_fs, gyro_fs)
 %   cpu_hz    core clock = DWT cycle counter frequency                  (default 84e6)
 %   accel_fs  MPU_ACCEL_FS_SEL used in the firmware (0..3)              (default 0)
 %   gyro_fs   MPU_GYRO_FS_SEL used in the firmware (0..3)               (default 0)
+%   trim_s    seconds dropped at the start and end for the static IMU statistics and the Allan deviation (default 0)
 %
 % Same quantities as the Python tool (tools/imu_daq), so results can be cross-checked.
 
@@ -14,6 +15,7 @@ if nargin < 2, rate_hz  = 1000; end
 if nargin < 3, cpu_hz   = 84e6; end
 if nargin < 4, accel_fs = 0;    end
 if nargin < 5, gyro_fs  = 0;    end
+if nargin < 6, trim_s   = 0;    end
 
 acc_lsb  = [16384 8192 4096 2048];
 gyro_lsb = [131 65.5 32.8 16.4];
@@ -50,6 +52,11 @@ report.latency_max_us  = max(lat_us);
 % ---- static IMU ---------------------------------------------------------------
 acc  = L.counts(:, 1:3) / acc_lsb(accel_fs + 1);   % [g]
 gyro = L.counts(:, 5:7) / gyro_lsb(gyro_fs + 1);   % [deg/s]
+if trim_s > 0
+    t_ = [0; cumsum(mod(diff(L.t_tick), 2^32))] / cpu_hz;   % time of each sample [s]
+    keep_ = t_ >= trim_s & t_ <= t_(end) - trim_s;
+    acc = acc(keep_, :); gyro = gyro(keep_, :);
+end
 report.acc_mean_g      = mean(acc);
 report.acc_std_mg      = std(acc) * 1e3;
 report.acc_norm_err_mg = (mean(sqrt(sum(acc.^2, 2))) - 1) * 1e3;
