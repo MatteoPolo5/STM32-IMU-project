@@ -420,7 +420,16 @@ Mean [-1.0084, -1.5124, 0.3266] deg/s; **spread between resets 0.0092 / 0.0047 /
 **x-up repeated (xp_again, 30 s, board warm).** `analyze` on the whole file (no trimming): gyro bias [-0.99419, -1.5127, 0.4] deg/s,
 |a| = 1.0604 g (+60.4 mg), frames 30 079 / 30 079, 0 lost, host rate 999.990 frames/s (-10 ppm). The z value 0.40 deg/s
 matches neither 0.23 (first +x capture) nor 0.33 (flat), but this statistic included the seconds in which the board was being
-put in place, so it is **not interpreted**. It is to be re-analysed with `--trim 3` (new option) before drawing a conclusion.
+put in place, so it was not interpreted at first. **Re-analysed with `--trim 3`: gyro bias [-0.99418, -1.51174, 0.40032] deg/s,
+unchanged**, so the handling at the start did not cause it. The same orientation (+x) gave z = 0.233 deg/s in the morning
+(22.0 C) and 0.400 deg/s now, while flat captures after 5 resets gave 0.327 deg/s; the orientation of the board therefore
+does not explain the step of T13, and neither do resets (spread below 0.01 deg/s). What remains is a change with time or
+temperature of up to about 0.17 deg/s over hours. The die temperature of this capture was 23.75 C, between the flat captures
+(0.327 deg/s at 23.3 C, 0.325 at 24.2 C) and the -z capture (0.338 at 23.8 C): at about the same temperature z ranged from
+0.325 to 0.400 deg/s, so the die temperature does not explain it either. **Cause not identified**; the candidates left are a
+slow drift of the bias over hours, mechanical effects of the wires on the breakout, or the supply, none of them tested.
+The criterion of T13 for the gyro (spread below 0.05 deg/s) stays "not met". Practical consequence, independent of the
+cause: estimate the gyro bias at rest immediately before use (it repeats to better than 0.01 deg/s over minutes).
 
 **Tool defect found.** The Allan summary printed "bias instability 13-20 deg/h at tau 2-3 s" for this 30 s record and had
 printed 3.8 deg/h at 120 s for the 10 min record of 2026-11-09. Both rest on a handful of independent averages (T / tau of 10
