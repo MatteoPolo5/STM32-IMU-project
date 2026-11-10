@@ -116,7 +116,8 @@ the open points are in [docs/validation.md](docs/validation.md).
 | Acquisition latency (tick to DMA done) | 388.6 µs mean, 388.7 µs max | 39 % of the 1 ms period; bus-time estimate is 387.5 µs |
 | Timer-interrupt entry jitter | 0.004 µs rms, 0.036-0.048 µs peak-to-peak | CPU almost idle: this is *not* end-to-end sampling jitter |
 | Sampling rate, internal RC oscillator (HSI) | about 1013-1015 frames/s | **+1.3 to +1.5 % fast** |
-| Sampling rate, ST-LINK 8 MHz clock (HSE) | 60 032 frames in 60 s | +0.05 %, inside the host timing uncertainty (about 0.2 %) |
+| Sampling rate, ST-LINK 8 MHz clock (HSE) | 999.984 frames/s over 600 s | **-16 ppm** against the PC clock (reference accuracy not checked) |
+| Gyro angle random walk | 0.23-0.26 deg/sqrt(h) (x, y, z) | from the Allan deviation; datasheet noise density corresponds to about 0.3 deg/sqrt(h) |
 | Static IMU, uncalibrated | abs(a) = 1.062-1.073 g, gyro bias about [-1.0, -1.5, 0.27-0.41] deg/s | temperature 23.2 C |
 
 What the measurements showed:
@@ -137,8 +138,8 @@ Plots from the 10 min run (600 063 frames at 1 kHz), produced by `python -m imu_
 ![Timer-interrupt entry jitter](docs/img/timing_jitter.png)
 ![Acquisition latency, tick to DMA done](docs/img/latency.png)
 
-Not verified yet: sampling rate within 100 ppm, jitter with a logic analyser, behaviour under injected faults
-(stalled main loop, disconnected SDA), the 200/500/1000 Hz sweep, Allan-deviation figures.
+Not verified yet: accuracy of the PC clock used as time reference, jitter with a logic analyser, behaviour of a stalled
+main loop, gyro bias instability (10 min is too short to reach the noise floor).
 
 ### Noise figures and static calibration
 

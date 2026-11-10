@@ -10,7 +10,7 @@ Every test has a pass criterion and the command that produces the number.
 | T1 | Sensor bring-up | banner shows `who_am_i=0x68` | present | **Pass** (2026-10-28) |
 | T2 | No lost samples, end to end | 10 min capture at 1 kHz, `analyze` | `frames_lost == 0`, `crc_errors == 0` | **Pass on native Linux**: 600 s, 608 511 frames, 0 lost, 0 CRC errors with the fixed `capture` (linux_10min_b, see run log 2026-11-02). Not met on the first (virtual-machine USB) path: 79 lost (0.13 %) in 60 s |
 | T2b | No lost samples, firmware side | internal counters via `tools/read_stats.py` | overruns = ring overflows = I2C errors = watchdog aborts = 0, `frames_sent == ticks` | **Pass**: 958 398 samples, all counters 0 |
-| T3 | Absolute sampling rate | compare sample count with an independent time reference | within 100 ppm (HSE) | **Partly verified**: HSI build ran about +1.3 % fast (1013-1015 frames/s); HSE build gives 60 032 frames in 60 s (+0.05 %, inside the host timing uncertainty of about 0.2 %). Repeated 2026-11-04: +0.05 % (60 s), +0.01 % (600 s). Not yet shown within 100 ppm, see run logs 2026-11-03 and 2026-11-04 |
+| T3 | Absolute sampling rate | compare sample count with an independent time reference | within 100 ppm (HSE) | **Pass against the PC clock** (-16 ppm over 600 s, both halves -16 ppm, 2026-11-09). Reference accuracy (NTP state of the PC) not checked, see run log |
 | T4 | ISR-entry jitter (from log) | `jitter_us` in `summary.json` | report rms, peak-to-peak, max | **Recorded** (table below) |
 | T5 | Jitter, independent check | logic analyzer on a pin toggled in the TIM2 ISR | compare with T4 | Not done |
 | T6 | Acquisition latency | `latency_us` | max < 80 % of the period | **Pass**: 388.7 µs max (39 % of 1 ms) |
@@ -19,7 +19,7 @@ Every test has a pass criterion and the command that produces the number.
 | T9 | Fault injection: I2C | disconnect SDA for 1 s during streaming, reconnect | `i2c_errors` / `watchdog_aborts` increase, streaming resumes by itself | **Pass on resume and loss accounting** (2026-11-04); `i2c_errors` / `watchdog_aborts` counters not read |
 | T10 | Rate sweep | build with 200 / 500 / 1000 Hz | table below | **Done** (200 / 500 / 1000 Hz, 0 lost in every run, see table below) |
 | T11 | Capture path independence | same 60 s capture on a native Linux PC (no virtual machine, no USB forwarding) | compare gap statistics with the first runs | **Done**: no loss on native Linux (60 s and 600 s), so the losses were not reproduced without the virtual-machine path. Consistent with that path being the cause, not proof of it (one board, one PC, two sessions) |
-| T12 | Gyro noise (Allan deviation) | 10 min static capture, `analyze` prints ARW and bias instability per axis | report values with the observed/not-observed flags; no pass/fail (compare with the datasheet value, to be looked up) | Not done |
+| T12 | Gyro noise (Allan deviation) | 10 min static capture, `analyze` prints ARW and bias instability per axis | report values with the observed/not-observed flags; no pass/fail | **Recorded** (2026-11-09): ARW 0.23-0.26 deg/sqrt(h); bias instability not reliably observed |
 | T13 | Static calibration | six-position captures + 1 held-out orientation, `calibrate` | held-out abs(a) error after calibration below 10 mg (before: about +60 to +70 mg); gyro bias spread over the six positions below 0.05 deg/s | Not done |
 
 ### Criterion revision (T7)
@@ -306,6 +306,43 @@ was pulled by hand and reconnected; the real duration of the disconnection was n
 * Not established: how many I2C errors / watchdog aborts the firmware counted (`read_stats.py` was not available on this
   host), and whether a shorter or longer interruption, or one in the middle of a transfer, behaves the same. One
   repetition only.
+
+### 2026-11-09: static 10 min capture, Allan deviation and rate against the host clock (T12, T3)
+
+**Setup.** NUCLEO-F446RE, GY-521 flat and untouched, HSE build, 1 kHz, native Linux host, `allan600.bin`, analysed with the
+new `analyze` (Allan summary, host-rate sidecar). The firmware banner was not recorded.
+
+**Results.** 600 063 frames received / 600 063 expected, 0 lost, 0 CRC errors. Jitter rms 0.004 us, p-p 0.048 us; latency
+388.6 / 388.6 us. Static IMU: |a| = 1.0702 g (+70.2 mg), gyro bias [-0.97073, -1.52629, 0.2106] deg/s.
+
+| Gyro axis | ARW [deg/sqrt(h)] | Slope at 1 s | Bias instability | Minimum |
+|---|---|---|---|---|
+| x | 0.258 | -0.53 | not observed (tau up to 200 s) | - |
+| y | 0.252 | -0.62 | 3.8 deg/h at tau = 120.3 s | flagged as observed |
+| z | 0.234 | -0.52 | not observed (tau up to 200 s) | - |
+
+**Rate against the host clock (T3).** 999.984 frames/s over 599.9 s, i.e. -16 ppm versus 1000 Hz; the first and second half
+of the capture give the same value (999.984 / 999.984). The rate is the slope of cumulative frames against host monotonic
+time, so it does not depend on when the capture started or stopped or on a constant USB latency (this replaces the
+about 0.2 % window uncertainty of the earlier runs).
+
+**Interpretation.**
+* Established: against the PC's monotonic clock the sampling rate with the HSE is within 100 ppm (-16 ppm), and the
+  earlier +1.3 % error of the HSI build is gone.
+* Not established: the accuracy of the reference. The PC clock was not checked (NTP synchronisation, crystal error of
+  typically tens of ppm), so "within 100 ppm" holds if the PC clock is accurate to better than about 84 ppm.
+* ARW: 0.23-0.26 deg/sqrt(h), read where the curve slope at 1 s is -0.52 to -0.62 (close to the expected -0.5; the y axis is
+  steeper). For comparison, the MPU-6000/6050 datasheet (Rev 3.2) gives a rate noise spectral density of
+  0.005 deg/s/sqrt(Hz) at 10 Hz, which corresponds to about 0.3 deg/sqrt(h): the measured values are of the same order and
+  somewhat lower. The datasheet figure is a specification at one frequency and these are estimates from one 10 min run, so
+  this is a plausibility check and not a verification.
+* Bias instability: **not established.** Only y is flagged, with a minimum at tau = 120 s, where the 10 min record holds
+  only about 5 independent averages (statistical uncertainty of the order of 35 %), and the minimum of a noisy tail is biased
+  low. The x and z curves did not reach a floor within 200 s. A longer capture (hours) is needed for this figure.
+* Short-term stability and drift are different things: the bias instability read here is of the order of a few deg/h,
+  while the mean gyro bias differed by about 0.1 deg/s between sessions (see T7). The bias must be re-estimated after
+  warm-up; a stored value is not reliable across sessions.
+* The measured bias (about -1.0, -1.5, 0.2 deg/s) is far inside the datasheet's initial zero-rate tolerance of +-20 deg/s.
 
 ### Template for the next runs
 
