@@ -20,7 +20,7 @@ Every test has a pass criterion and the command that produces the number.
 | T10 | Rate sweep | build with 200 / 500 / 1000 Hz | table below | **Done** (200 / 500 / 1000 Hz, 0 lost in every run, see table below) |
 | T11 | Capture path independence | same 60 s capture on a native Linux PC (no virtual machine, no USB forwarding) | compare gap statistics with the first runs | **Done**: no loss on native Linux (60 s and 600 s), so the losses were not reproduced without the virtual-machine path. Consistent with that path being the cause, not proof of it (one board, one PC, two sessions) |
 | T12 | Gyro noise (Allan deviation) | 10 min static capture, `analyze` prints ARW and bias instability per axis | report values with the observed/not-observed flags; no pass/fail | **Recorded** (2026-11-09): ARW 0.23-0.26 deg/sqrt(h); bias instability not reliably observed |
-| T13 | Static calibration | six-position captures + 1 held-out orientation, `calibrate` | held-out abs(a) error after calibration below 10 mg (before: about +60 to +70 mg); gyro bias spread over the six positions below 0.05 deg/s | Not done |
+| T13 | Static calibration | six-position captures + 1 held-out orientation, `calibrate` | held-out abs(a) error after calibration below 10 mg (before: about +60 to +70 mg); gyro bias spread over the six positions below 0.05 deg/s | **Accelerometer: pass** (held-out +56.4 mg -> +3.9 mg). **Gyro spread: not met** (0.051 / 0.079 / 0.120 deg/s), cause not identified, see run log 2026-11-10 |
 
 ### Criterion revision (T7)
 
@@ -343,6 +343,77 @@ about 0.2 % window uncertainty of the earlier runs).
   while the mean gyro bias differed by about 0.1 deg/s between sessions (see T7). The bias must be re-estimated after
   warm-up; a stored value is not reliable across sessions.
 * The measured bias (about -1.0, -1.5, 0.2 deg/s) is far inside the datasheet's initial zero-rate tolerance of +-20 deg/s.
+
+### 2026-11-10: six-position calibration (T13)
+
+**Setup.** Same board, sensor and host. Captures of 30 s per position with `capture_calibration.py`, six positions plus one tilted
+position (about 45 degrees, not used in the fit), analysed with `imu_daq calibrate` (diagonal model, 2 s trimmed at each end).
+
+**Incidents during the session (recorded because they cost data).**
+* Four captures in a row (yn, zp, zn, held) came out empty: no frames, 0 bytes, after the board had been moved; the board
+  streamed again after a RESET. The y-up capture (yp) was taken in a wrong orientation by the operator and was repeated.
+  A repeated y-up attempt produced only the `FATAL: MPU6050 not responding` text; the sensor connection was then fixed by the
+  operator (what exactly was fixed was not recorded). Hypothesis, not proven: intermittent electrical contact of the
+  breakout wires or pins when the board is moved; the firmware does not retry the sensor initialisation after a `FATAL`.
+* `capture_calibration.py` now checks the number of valid frames after each capture and repeats the position when too few arrive.
+
+**Results.**
+
+| | x | y | z |
+|---|---|---|---|
+| Accelerometer bias [g] | +0.0555 | -0.0136 | +0.0545 |
+| Accelerometer scale (1.0 = nominal) | 1.00062 | 1.00415 | 0.98596 |
+| Gyro bias, mean over the six positions [deg/s] | -0.9989 | -1.5087 | +0.2900 |
+| Gyro bias spread over the six positions [deg/s] | 0.0513 | 0.0791 | 0.1204 |
+
+abs(a) error before -> after calibration: +x +56.6 -> +0.1 mg, -x -48.2 -> +2.2 mg, +y -17.6 -> +2.1 mg, -y +11.6 -> +0.6 mg,
++z +69.8 -> +1.4 mg, -z -39.3 -> +1.7 mg (all in the fit); **held-out orientation +56.4 -> +3.9 mg**.
+
+**Interpretation.**
+* Established: the six-position fit removes most of the static accelerometer error: in an orientation not used in the fit the
+  abs(a) error fell from +56.4 mg to +3.9 mg (criterion: below 10 mg), from a single held-out orientation. The fitted values
+  are within the MPU-6000/6050 datasheet (Rev 3.2) limits for the scale factor (+-3 %: here +0.06, +0.4, -1.4 %) and the zero-g
+  offset of the Z axis (+-80 mg: here 54.5 mg); the X offset (55.5 mg) is slightly above the +-50 mg given for X and Y. Those
+  datasheet limits are "typical after preconditioning", not guaranteed maxima, so this is not a failure of the sensor.
+* The residual of 3.9 mg in the held-out orientation is larger than the 0.1-2.2 mg of the fitted positions. Axis misalignment,
+  which the model does not include, is a candidate; this was not tested.
+* **Not met:** gyro bias spread below 0.05 deg/s between positions (measured 0.051 / 0.079 / 0.120). Not established whether
+  it is drift during the session (the board warms up, captures span tens of minutes) or a dependence on the direction of gravity
+  (the datasheet gives a gyro linear-acceleration sensitivity of 0.1 deg/s/g, which could produce differences of this size
+  between positions). A repeat of one position at the end of the session separates the two. The criterion is not loosened.
+* The calibrated values are for this board near the measured temperature; the gyro bias in particular should be
+  re-estimated at start-up (see 2026-11-09).
+
+### 2026-11-10: gyro bias after repeated resets
+
+**Why.** The gyro bias spread between the six calibration positions (0.05-0.12 deg/s) exceeded the criterion. One candidate was
+that the bias changes every time the sensor is re-initialised (the firmware sends the MPU6050 a device reset at each start).
+**Setup.** `reset_bias_test.py`: board flat and untouched, 5 rounds of (press RESET, capture 30 s, 3 s trimmed at each end).
+
+| Round | Gyro bias [deg/s] | Die temperature | Half 1 minus half 2 [deg/s] |
+|---|---|---|---|
+| 1 | -1.0103, -1.5137, 0.3307 | 23.34 C | -0.0004, -0.0005, -0.0013 |
+| 2 | -1.0111, -1.5123, 0.3244 | 23.29 C | 0.0022, 0.0002, -0.0003 |
+| 3 | -1.0125, -1.5098, 0.3269 | 23.26 C | -0.0053, -0.0012, 0.0019 |
+| 4 | -1.0033, -1.5145, 0.3229 | 23.23 C | 0.0039, 0.0014, 0.0011 |
+| 5 | -1.0052, -1.5116, 0.3280 | 23.21 C | 0.0037, -0.0005, -0.0008 |
+
+Mean [-1.0084, -1.5124, 0.3266] deg/s; **spread between resets 0.0092 / 0.0047 / 0.0079 deg/s** (max - min).
+
+**Interpretation.**
+* Established: re-initialising the sensor with the board still and at constant temperature changes the bias by less than
+  0.01 deg/s, and within one capture the bias does not drift visibly (halves differ by at most 0.005 deg/s). The hypothesis
+  that the bias change at every start-up explains the spread of T13 is **rejected** by this test. Limit: the sensor stays
+  powered through the reset, so this is not a power-cycle test.
+* The flat (z up) value reproduces across the session: z = 0.325 deg/s in T13 (+z, 24.2 C) and 0.327 deg/s here (23.3 C), about
+  an hour later.
+* From the T13 table, the difference of opposite orientations (+ minus -, similar temperature) is at most 0.066 deg/s
+  (z gyro with gravity along y), which corresponds to a sensitivity to the direction of gravity of the order of 0.03 deg/s/g,
+  below the 0.1 deg/s/g of the datasheet. The larger part of the z spread is a step of about 0.1 deg/s between the first two
+  captures (+x, -x: z = 0.233 and 0.223 deg/s at 22.0-22.2 C, taken at the start of the session) and the later ones (0.278 to
+  0.344 deg/s at 23.8-25.4 C). Whether this is warm-up or temperature, or an effect of gravity along x, is **not established**.
+  Next test: repeat the x-up capture now that the board is warm; a z bias of about 0.3 deg/s would point at warm-up or
+  temperature, a value of about 0.23 deg/s at an effect of the orientation.
 
 ### Template for the next runs
 

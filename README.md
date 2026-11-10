@@ -117,6 +117,7 @@ the open points are in [docs/validation.md](docs/validation.md).
 | Timer-interrupt entry jitter | 0.004 µs rms, 0.036-0.048 µs peak-to-peak | CPU almost idle: this is *not* end-to-end sampling jitter |
 | Sampling rate, internal RC oscillator (HSI) | about 1013-1015 frames/s | **+1.3 to +1.5 % fast** |
 | Sampling rate, ST-LINK 8 MHz clock (HSE) | 999.984 frames/s over 600 s | **-16 ppm** against the PC clock (reference accuracy not checked) |
+| Static accelerometer calibration (six positions) | abs(a) error +56.4 mg -> +3.9 mg in an orientation not used in the fit | one held-out orientation; the gyro bias differs by 0.05-0.12 deg/s between positions (cause not identified) |
 | Gyro angle random walk | 0.23-0.26 deg/sqrt(h) (x, y, z) | from the Allan deviation; datasheet noise density corresponds to about 0.3 deg/sqrt(h) |
 | Static IMU, uncalibrated | abs(a) = 1.062-1.073 g, gyro bias about [-1.0, -1.5, 0.27-0.41] deg/s | temperature 23.2 C |
 
